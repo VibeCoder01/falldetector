@@ -1,0 +1,7 @@
+.venv/
+__pycache__/
+*.pyc
+.DS_Store
+
+# Local config exports (may contain credentials)
+fall-detector-config-*.json

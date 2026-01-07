@@ -1,0 +1,309 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Fall Detector Control Room</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,300;9..144,600;9..144,700&family=Space+Grotesk:wght@400;500;600&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="icon" href="favicon.svg" type="image/svg+xml" />
+    <link rel="icon" href="favicon.png" type="image/png" sizes="32x32" />
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <div class="glow"></div>
+    <header class="hero">
+      <div class="hero-content">
+        <p class="eyebrow">Live Safety Intelligence</p>
+        <h1>Fall Detector Control Room</h1>
+        <p class="lead">
+          Monitor a live Tapo camera feed, send frames to Ollama for analysis, and
+          notify caregivers the instant someone is detected on the floor.
+        </p>
+        <div class="hero-actions">
+        </div>
+        <div class="status-strip">
+          <div>
+            <span class="label">Stream</span>
+            <strong id="status-stream">Idle</strong>
+          </div>
+          <div>
+            <span class="label">Inference</span>
+            <strong id="status-inference">—</strong>
+          </div>
+          <div>
+            <span class="label">Alerts</span>
+            <strong id="status-alerts">0 sent</strong>
+          </div>
+        </div>
+      </div>
+      <div class="hero-card">
+        <div class="card-header">
+          <span>Live View</span>
+          <span class="chip" id="live-camera-model">Tapo C210</span>
+        </div>
+        <div class="stream">
+          <img id="stream-preview" alt="Stream preview" />
+          <div class="stream-overlay" id="stream-overlay">
+            <p>Stream preview placeholder</p>
+            <button class="ghost small" id="preview-button">Connect Preview</button>
+          </div>
+        </div>
+        <div class="card-footer">
+          <div>
+            <span class="label">Capture Interval</span>
+            <strong>Every 6s</strong>
+          </div>
+          <div>
+            <span class="label">Model</span>
+            <strong id="live-model">—</strong>
+          </div>
+        </div>
+      </div>
+    </header>
+
+    <main>
+      <section class="grid">
+        <article class="panel">
+          <h2>Camera & Stream</h2>
+          <p class="muted">Connect the Tapo stream and set capture cadence.</p>
+          <form class="stack" id="camera-form">
+            <label>
+              Tapo camera name
+              <input type="text" id="camera-name" placeholder="Living Room Cam" />
+            </label>
+            <label>
+              Camera model
+              <input type="text" id="camera-model" placeholder="Tapo C210" />
+            </label>
+            <div class="two-col">
+              <label>
+                Camera IP
+                <input type="text" id="camera-ip" placeholder="192.168.0.42" />
+              </label>
+              <label>
+                Preview snapshot interval (seconds)
+                <input type="number" id="snapshot-interval" min="2" max="60" step="1" value="20" />
+              </label>
+            </div>
+            <label>
+              Stream URL (auto-built for Tapo C-series)
+              <input type="text" id="stream-url" placeholder="rtsp://user:pass@192.168.0.42:554/stream1" />
+            </label>
+            <div class="two-col">
+              <label>
+                RTSP username
+                <input type="text" id="rtsp-user" placeholder="tapo-user" />
+              </label>
+              <label>
+                RTSP password
+                <input type="password" id="rtsp-pass" placeholder="••••••••" />
+              </label>
+            </div>
+            <div class="two-col">
+              <label>
+                Stream profile
+                <select id="stream-profile">
+                  <option value="main">Main (high quality)</option>
+                  <option value="sub">Sub (low bandwidth)</option>
+                </select>
+              </label>
+              <label>
+                Preview URL (HTTP/MJPEG/Snapshot)
+                <input type="text" id="preview-url" placeholder="http://192.168.0.42:8080/stream.mjpeg" />
+              </label>
+            </div>
+            <label>
+              Preview mode
+              <select id="preview-mode">
+                <option value="mjpeg">MJPEG stream</option>
+                <option value="snapshot">Snapshot polling</option>
+                <option value="rtsp">RTSP snapshot (server)</option>
+              </select>
+            </label>
+            <label class="toggle">
+              <input type="checkbox" id="motion-snapshot" checked />
+              <span>Enable motion snapshotting</span>
+            </label>
+            <div class="actions">
+              <button type="button" class="primary" id="connect-preview">Connect Preview</button>
+              <button type="button" class="ghost" id="stop-preview">Stop Preview</button>
+            </div>
+          </form>
+        </article>
+
+        <article class="panel">
+          <h2>Ollama Analyzer</h2>
+          <p class="muted">Configure the model server and detection logic.</p>
+          <form class="stack" id="ollama-form">
+            <div class="two-col">
+              <label>
+                Ollama host
+                <input type="text" id="ollama-host" placeholder="192.168.0.20" />
+              </label>
+              <label>
+                Port
+                <input type="number" id="ollama-port" min="1" max="65535" value="11434" />
+              </label>
+            </div>
+            <label>
+              Model name
+              <div class="inline-field">
+                <select id="ollama-model">
+                  <option value="">Select a model</option>
+                  <option value="__custom__">Custom…</option>
+                </select>
+                <button type="button" class="ghost small" id="fetch-models">Fetch Models</button>
+                <button type="button" class="ghost small" id="pull-model">Pull Model</button>
+                <button type="button" class="ghost small" id="cancel-pull">Cancel</button>
+              </div>
+              <div class="inline-status muted" id="model-pull-status">Idle.</div>
+              <progress id="model-pull-progress" value="0" max="100"></progress>
+              <input
+                type="text"
+                id="ollama-model-custom"
+                placeholder="e.g. llava:latest"
+                style="display: none"
+              />
+            </label>
+            <label>
+              Prompt template
+              <textarea id="ollama-prompt" rows="4">Return YES if a person is lying on the floor, otherwise NO. Include a short reason.</textarea>
+            </label>
+            <label>
+              Alert trigger response
+              <input type="text" id="ollama-trigger" placeholder="YES" value="YES" />
+            </label>
+            <label>
+              Inference timeout (seconds)
+              <input type="number" id="ollama-timeout" min="10" max="600" value="180" />
+              <div class="range-hint">Allow large models more time to respond.</div>
+            </label>
+            <label>
+              Inference interval (seconds)
+              <input type="number" id="ollama-interval" min="10" max="600" value="180" />
+              <div class="range-hint">How often to run detection when armed.</div>
+            </label>
+          </form>
+        </article>
+
+        <article class="panel">
+          <h2>Alert Routing</h2>
+          <p class="muted">Choose how to notify responders and provide details.</p>
+          <form class="stack" id="alert-form">
+            <div class="three-col">
+              <label class="toggle">
+                <input type="checkbox" id="alert-email" checked />
+                <span>Email</span>
+              </label>
+            </div>
+            <label>
+              Sender email
+              <input type="email" id="sender-email" placeholder="alerts@yourdomain.com" />
+            </label>
+            <label>
+              Gmail account email
+              <input type="email" id="gmail-user" placeholder="you@gmail.com" />
+            </label>
+            <label>
+              Gmail app password
+              <input type="password" id="gmail-app-password" placeholder="16-character app password" />
+              <small>Use an App Password from Google Account Security.</small>
+            </label>
+            <label>
+              Gmail sender name
+              <input type="text" id="gmail-sender-name" placeholder="Fall Detector Alerts" />
+            </label>
+          </form>
+        </article>
+
+        <article class="panel" id="status-panel">
+          <h2>Status & Checks</h2>
+          <p class="muted">Validate inputs and test basic connectivity before arming.</p>
+          <div class="actions">
+            <button type="button" class="primary" id="run-checks">Run Checks</button>
+            <button type="button" class="ghost" id="clear-checks">Clear</button>
+            <button type="button" class="ghost small" id="test-inference">Run inference now</button>
+            <button type="button" class="ghost small" id="test-alerting">Test alerting</button>
+            <button type="button" class="ghost small" id="debug-validation">Show validation details</button>
+          </div>
+          <div class="status-list" id="status-list"></div>
+        </article>
+
+        <article class="panel" id="responses-panel">
+          <h2>AI Responses</h2>
+          <p class="muted">Last 48 hours of Ollama detections.</p>
+          <div class="actions">
+            <label class="toggle">
+              <input type="checkbox" id="filter-yes-only" />
+              <span>Show YES only</span>
+            </label>
+            <button type="button" class="ghost small" id="refresh-responses">Refresh</button>
+          </div>
+          <div class="responses-window" id="responses-window">
+            <div class="list-empty">No responses yet.</div>
+          </div>
+        </article>
+
+        <article class="panel wide">
+          <h2>Responders</h2>
+          <p class="muted">Maintain the list of people who receive alerts.</p>
+          <form class="stack" id="responders-form">
+            <div class="two-col">
+              <label>
+                Name
+                <input type="text" id="responder-name" placeholder="Alex Morgan" />
+              </label>
+              <label>
+                Role
+                <input type="text" id="responder-role" placeholder="Caregiver" />
+              </label>
+            </div>
+            <div class="two-col">
+              <label>
+                Email
+                <input type="email" id="responder-email" placeholder="alex@example.com" />
+              </label>
+              <label>
+                Phone
+                <input type="tel" id="responder-phone" placeholder="+1 415 555 0132" />
+              </label>
+            </div>
+            <div class="actions">
+              <button type="button" class="primary" id="add-responder">Add Responder</button>
+              <button type="button" class="ghost" id="clear-responders">Clear All</button>
+            </div>
+          </form>
+          <div class="list" id="responders-list">
+            <div class="list-empty">No responders added yet.</div>
+          </div>
+        </article>
+      </section>
+
+      <section class="cta">
+        <div>
+          <h2>Ready to arm the system?</h2>
+          <p class="muted">
+            Save the configuration and start the monitoring loop. Alerts will
+            fire as soon as a fall is detected.
+          </p>
+        </div>
+        <div class="actions">
+          <button class="primary" id="save-arm" type="button">Save & Arm</button>
+          <button class="ghost" id="save-config" type="button">Save</button>
+          <button class="ghost" id="disarm" type="button">Disarm</button>
+          <button class="ghost" id="export-config" type="button">Export Config</button>
+          <button class="ghost" id="import-config" type="button">Import Config</button>
+        </div>
+        <div class="arm-feedback" id="arm-feedback" role="status" aria-live="polite"></div>
+        <input type="file" id="config-file" accept="application/json" style="display: none" />
+      </section>
+    </main>
+
+    <script src="app.js"></script>
+  </body>
+</html>
