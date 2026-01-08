@@ -233,6 +233,72 @@ main {
   gap: 16px;
 }
 
+.panel.collapsible {
+  padding: 0;
+}
+
+.panel.collapsible summary {
+  list-style: none;
+  cursor: pointer;
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 16px;
+  padding: 24px;
+}
+
+.panel.collapsible summary::-webkit-details-marker {
+  display: none;
+}
+
+.panel.collapsible[open] summary {
+  border-bottom: 1px solid rgba(28, 26, 22, 0.08);
+}
+
+.panel.collapsible .panel-heading {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.panel.collapsible .panel-body {
+  padding: 0 24px 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.panel.collapsible .panel-chevron {
+  width: 36px;
+  height: 36px;
+  border-radius: 999px;
+  border: 1px solid rgba(28, 26, 22, 0.12);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  position: relative;
+}
+
+.panel.collapsible .panel-chevron::before,
+.panel.collapsible .panel-chevron::after {
+  content: "";
+  position: absolute;
+  width: 14px;
+  height: 2px;
+  background: var(--muted);
+  border-radius: 999px;
+  transition: transform 0.2s ease;
+}
+
+.panel.collapsible .panel-chevron::after {
+  transform: rotate(90deg);
+}
+
+.panel.collapsible[open] .panel-chevron::after {
+  transform: rotate(0deg);
+}
+
 .panel.wide {
   grid-column: span 2;
 }

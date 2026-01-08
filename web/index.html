@@ -68,10 +68,16 @@
 
     <main>
       <section class="grid">
-        <article class="panel">
-          <h2>Camera & Stream</h2>
-          <p class="muted">Connect the Tapo stream and set capture cadence.</p>
-          <form class="stack" id="camera-form">
+        <details class="panel collapsible" open>
+          <summary>
+            <div class="panel-heading">
+              <h2>Camera & Stream</h2>
+              <p class="muted">Connect the Tapo stream and set capture cadence.</p>
+            </div>
+            <span class="panel-chevron" aria-hidden="true"></span>
+          </summary>
+          <div class="panel-body">
+            <form class="stack" id="camera-form">
             <label>
               Tapo camera name
               <input type="text" id="camera-name" placeholder="Living Room Cam" />
@@ -133,13 +139,20 @@
               <button type="button" class="primary" id="connect-preview">Connect Preview</button>
               <button type="button" class="ghost" id="stop-preview">Stop Preview</button>
             </div>
-          </form>
-        </article>
+            </form>
+          </div>
+        </details>
 
-        <article class="panel">
-          <h2>Ollama Analyzer</h2>
-          <p class="muted">Configure the model server and detection logic.</p>
-          <form class="stack" id="ollama-form">
+        <details class="panel collapsible" open>
+          <summary>
+            <div class="panel-heading">
+              <h2>Ollama Analyzer</h2>
+              <p class="muted">Configure the model server and detection logic.</p>
+            </div>
+            <span class="panel-chevron" aria-hidden="true"></span>
+          </summary>
+          <div class="panel-body">
+            <form class="stack" id="ollama-form">
             <div class="two-col">
               <label>
                 Ollama host
@@ -188,13 +201,20 @@
               <input type="number" id="ollama-interval" min="10" max="600" value="180" />
               <div class="range-hint">How often to run detection when armed.</div>
             </label>
-          </form>
-        </article>
+            </form>
+          </div>
+        </details>
 
-        <article class="panel">
-          <h2>Alert Routing</h2>
-          <p class="muted">Choose how to notify responders and provide details.</p>
-          <form class="stack" id="alert-form">
+        <details class="panel collapsible" open>
+          <summary>
+            <div class="panel-heading">
+              <h2>Alert Routing</h2>
+              <p class="muted">Choose how to notify responders and provide details.</p>
+            </div>
+            <span class="panel-chevron" aria-hidden="true"></span>
+          </summary>
+          <div class="panel-body">
+            <form class="stack" id="alert-form">
             <div class="three-col">
               <label class="toggle">
                 <input type="checkbox" id="alert-email" checked />
@@ -218,21 +238,29 @@
               Gmail sender name
               <input type="text" id="gmail-sender-name" placeholder="Fall Detector Alerts" />
             </label>
-          </form>
-        </article>
-
-        <article class="panel" id="status-panel">
-          <h2>Status & Checks</h2>
-          <p class="muted">Validate inputs and test basic connectivity before arming.</p>
-          <div class="actions">
-            <button type="button" class="primary" id="run-checks">Run Checks</button>
-            <button type="button" class="ghost" id="clear-checks">Clear</button>
-            <button type="button" class="ghost small" id="test-inference">Run inference now</button>
-            <button type="button" class="ghost small" id="test-alerting">Test alerting</button>
-            <button type="button" class="ghost small" id="debug-validation">Show validation details</button>
+            </form>
           </div>
-          <div class="status-list" id="status-list"></div>
-        </article>
+        </details>
+
+        <details class="panel collapsible" id="status-panel" open>
+          <summary>
+            <div class="panel-heading">
+              <h2>Status & Checks</h2>
+              <p class="muted">Validate inputs and test basic connectivity before arming.</p>
+            </div>
+            <span class="panel-chevron" aria-hidden="true"></span>
+          </summary>
+          <div class="panel-body">
+            <div class="actions">
+              <button type="button" class="primary" id="run-checks">Run Checks</button>
+              <button type="button" class="ghost" id="clear-checks">Clear</button>
+              <button type="button" class="ghost small" id="test-inference">Run inference now</button>
+              <button type="button" class="ghost small" id="test-alerting">Test alerting</button>
+              <button type="button" class="ghost small" id="debug-validation">Show validation details</button>
+            </div>
+            <div class="status-list" id="status-list"></div>
+          </div>
+        </details>
 
         <article class="panel" id="responses-panel">
           <h2>AI Responses</h2>
@@ -249,10 +277,16 @@
           </div>
         </article>
 
-        <article class="panel wide">
-          <h2>Responders</h2>
-          <p class="muted">Maintain the list of people who receive alerts.</p>
-          <form class="stack" id="responders-form">
+        <details class="panel wide collapsible" open>
+          <summary>
+            <div class="panel-heading">
+              <h2>Responders</h2>
+              <p class="muted">Maintain the list of people who receive alerts.</p>
+            </div>
+            <span class="panel-chevron" aria-hidden="true"></span>
+          </summary>
+          <div class="panel-body">
+            <form class="stack" id="responders-form">
             <div class="two-col">
               <label>
                 Name
@@ -277,11 +311,12 @@
               <button type="button" class="primary" id="add-responder">Add Responder</button>
               <button type="button" class="ghost" id="clear-responders">Clear All</button>
             </div>
-          </form>
-          <div class="list" id="responders-list">
-            <div class="list-empty">No responders added yet.</div>
+            </form>
+            <div class="list" id="responders-list">
+              <div class="list-empty">No responders added yet.</div>
+            </div>
           </div>
-        </article>
+        </details>
       </section>
 
       <section class="cta">
