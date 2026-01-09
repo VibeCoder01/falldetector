@@ -34,6 +34,10 @@ const gmailUserInput = document.querySelector("#gmail-user");
 const gmailAppPasswordInput = document.querySelector("#gmail-app-password");
 const gmailSenderNameInput = document.querySelector("#gmail-sender-name");
 const motionSnapshotToggle = document.querySelector("#motion-snapshot");
+const cameraForm = document.querySelector("#camera-form");
+const ollamaForm = document.querySelector("#ollama-form");
+const alertForm = document.querySelector("#alert-form");
+const respondersForm = document.querySelector("#responders-form");
 const saveArmBtn = document.querySelector("#save-arm");
 const saveConfigBtn = document.querySelector("#save-config");
 const disarmBtn = document.querySelector("#disarm");
@@ -44,6 +48,15 @@ const statusStream = document.querySelector("#status-stream");
 const statusInference = document.querySelector("#status-inference");
 const statusAlerts = document.querySelector("#status-alerts");
 const armFeedback = document.querySelector("#arm-feedback");
+const ctaSection = document.querySelector(".cta");
+const ctaTitle = document.querySelector("#cta-title");
+const statusErrorsOnlyToggle = document.querySelector("#status-errors-only");
+const statusPanel = document.querySelector("#status-panel");
+const cameraPanel = document.querySelector("#camera-panel");
+const ollamaPanel = document.querySelector("#ollama-panel");
+const alertPanel = document.querySelector("#alert-panel");
+const respondersPanel = document.querySelector("#responders-panel");
+const responsesPanel = document.querySelector("#responses-panel");
 const responsesWindow = document.querySelector("#responses-window");
 const filterYesOnly = document.querySelector("#filter-yes-only");
 const refreshResponsesBtn = document.querySelector("#refresh-responses");
@@ -51,6 +64,7 @@ const fetchModelsBtn = document.querySelector("#fetch-models");
 const pullModelBtn = document.querySelector("#pull-model");
 const cancelPullBtn = document.querySelector("#cancel-pull");
 const ollamaCustomInput = document.querySelector("#ollama-model-custom");
+const modelFetchStatus = document.querySelector("#model-fetch-status");
 const modelPullStatus = document.querySelector("#model-pull-status");
 const modelPullProgress = document.querySelector("#model-pull-progress");
 const liveModelLabel = document.querySelector("#live-model");
@@ -58,6 +72,7 @@ const liveCameraModelLabel = document.querySelector("#live-camera-model");
 const testInferenceBtn = document.querySelector("#test-inference");
 const testAlertingBtn = document.querySelector("#test-alerting");
 const debugValidationBtn = document.querySelector("#debug-validation");
+const collapseAllBtn = document.querySelector("#collapse-all");
 
 const fields = {
   name: document.querySelector("#responder-name"),
@@ -87,6 +102,189 @@ let pullInFlight = false;
 let pullStatusTimer = null;
 let pullRequested = false;
 let lastEmailAlertErrorAt = 0;
+let fetchModelsInFlight = false;
+let fetchModelsWaitingTimer = null;
+let panelValidationTimer = null;
+const statusStates = new Map();
+let previewCheckInFlight = false;
+
+const updateReadinessState = (forceReady = false) => {
+  if (!ctaSection || !ctaTitle) {
+    return;
+  }
+  if (armedState) {
+    ctaTitle.textContent = "System is Armed!";
+    ctaSection.classList.remove("state-required", "state-ready");
+    ctaSection.classList.add("state-armed");
+    collapseAllPanels();
+    if (responsesPanel) {
+      responsesPanel.open = true;
+      responsesPanel.setAttribute("open", "");
+    }
+    return;
+  }
+  if (forceReady) {
+    ctaTitle.textContent = "System is READY to arm!";
+    ctaSection.classList.remove("state-required", "state-armed");
+    ctaSection.classList.add("state-ready");
+    return;
+  }
+  const validationOk = buildValidationItems().every(
+    (item) => item.state === "ok" || item.state === "info"
+  );
+  const previewState = statusStates.get("Preview connectivity");
+  const ollamaState = statusStates.get("Ollama connectivity");
+  const checksOk = previewState === "ok" && ollamaState === "ok";
+  if (validationOk && checksOk) {
+    ctaTitle.textContent = "System is READY to arm!";
+    ctaSection.classList.remove("state-required", "state-armed");
+    ctaSection.classList.add("state-ready");
+  } else {
+    ctaTitle.textContent = "Configuration required.";
+    ctaSection.classList.remove("state-ready", "state-armed");
+    ctaSection.classList.add("state-required");
+  }
+};
+
+const clearPanelErrors = () => {
+  [
+    cameraPanel,
+    ollamaPanel,
+    alertPanel,
+    respondersPanel,
+  ].forEach((panel) => {
+    if (panel) {
+      panel.classList.remove("has-error");
+    }
+  });
+};
+
+const schedulePanelRecheck = () => {
+  if (panelValidationTimer) {
+    window.clearTimeout(panelValidationTimer);
+  }
+  panelValidationTimer = window.setTimeout(() => {
+    updatePanelErrors(buildValidationItems());
+    panelValidationTimer = null;
+  }, 150);
+};
+
+const markStatusPending = (title) => {
+  statusStates.set(title, "warn");
+  updatePanelErrors(buildValidationItems());
+  updateReadinessState();
+};
+
+const scheduleOllamaConnectivityCheck = () => {
+  if (checksRunning) {
+    return;
+  }
+  checkOllamaConnection();
+};
+
+const schedulePreviewConnectivityCheck = () => {
+  if (checksRunning || previewCheckInFlight) {
+    return;
+  }
+  previewCheckInFlight = true;
+  markStatusPending("Preview connectivity");
+  checkPreviewConnection().finally(() => {
+    previewCheckInFlight = false;
+  });
+};
+
+const setModelFetchStatus = (state, message) => {
+  if (!modelFetchStatus) {
+    return;
+  }
+  modelFetchStatus.classList.remove("info", "ok", "error");
+  if (state) {
+    modelFetchStatus.classList.add(state);
+  }
+  modelFetchStatus.textContent = message;
+};
+
+const updatePanelErrors = (items) => {
+  const invalidTitles = new Set(
+    items
+      .filter((item) => item.state === "error" || item.state === "warn")
+      .map((item) => item.title)
+  );
+  const statusInvalidTitles = new Set(
+    Array.from(statusStates.entries())
+      .filter(([, state]) => state === "error" || state === "warn")
+      .map(([title]) => title)
+  );
+  const setPanelState = (panel, titles) => {
+    if (!panel) {
+      return;
+    }
+    const hasError = titles.some(
+      (title) => invalidTitles.has(title) || statusInvalidTitles.has(title)
+    );
+    if (hasError) {
+      panel.classList.add("has-error");
+      panel.classList.remove("has-valid");
+    } else {
+      panel.classList.remove("has-error");
+      panel.classList.add("has-valid");
+      panel.open = false;
+      panel.removeAttribute("open");
+    }
+  };
+  setPanelState(cameraPanel, [
+    "Preview interval",
+    "Stream URL",
+    "RTSP credentials",
+    "Tapo URL pattern",
+    "Preview mode",
+    "Preview URL",
+    "Stream profile",
+    "Camera IP",
+    "Preview connectivity",
+  ]);
+  setPanelState(ollamaPanel, [
+    "Ollama host",
+    "Ollama port",
+    "Ollama model",
+    "Prompt template",
+    "Alert trigger",
+    "Inference timeout",
+    "Inference interval",
+    "Ollama connectivity",
+    "Model list",
+    "Model pull",
+    "Inference test",
+    "Ollama analysis",
+  ]);
+  setPanelState(alertPanel, [
+    "Sender email",
+    "Gmail account email",
+    "Gmail app password",
+    "Gmail sender name",
+    "Alert test",
+    "Email alert",
+  ]);
+  setPanelState(respondersPanel, ["Responder emails"]);
+  updateReadinessState();
+};
+
+const openStatusPanel = () => {
+  const panel = statusPanel || document.querySelector("#status-panel");
+  if (!panel) {
+    return;
+  }
+  panel.open = true;
+  panel.setAttribute("open", "");
+  panel.scrollIntoView({ behavior: "smooth", block: "start" });
+};
+
+const collapseAllPanels = () => {
+  document.querySelectorAll("details.panel.collapsible").forEach((panel) => {
+    panel.open = false;
+    panel.removeAttribute("open");
+  });
+};
 
 const getInferenceIntervalSeconds = () => {
   if (ollamaIntervalInput) {
@@ -204,15 +402,37 @@ const updateLiveCameraModel = () => {
 const addStatus = (title, state, detail) => {
   const item = document.createElement("div");
   item.className = `status-item status-${state}`;
+  item.dataset.state = state;
   item.innerHTML = `
     <strong><span class="badge ${state}">${state}</span>${title}</strong>
     <span class="muted">${detail}</span>
   `;
   statusList.appendChild(item);
+  statusStates.set(title, state);
+  updatePanelErrors(buildValidationItems());
+  applyStatusFilter();
+  updateReadinessState();
 };
 
 const clearStatus = () => {
   statusList.innerHTML = "";
+  statusStates.clear();
+  updatePanelErrors(buildValidationItems());
+  applyStatusFilter();
+  updateReadinessState();
+};
+
+const applyStatusFilter = () => {
+  if (!statusErrorsOnlyToggle) {
+    return;
+  }
+  const showErrorsOnly = statusErrorsOnlyToggle.checked;
+  const items = statusList.querySelectorAll(".status-item");
+  items.forEach((item) => {
+    const state = item.dataset.state || "";
+    const isError = state === "error";
+    item.style.display = showErrorsOnly && !isError ? "none" : "";
+  });
 };
 
 const isValidHost = (value) => {
@@ -223,6 +443,15 @@ const isValidHost = (value) => {
     /^(25[0-5]|2[0-4]\\d|1\\d\\d|[1-9]?\\d)(\\.(25[0-5]|2[0-4]\\d|1\\d\\d|[1-9]?\\d)){3}$/;
   const hostRegex = /^[a-zA-Z0-9.-]+$/;
   return ipRegex.test(value) || hostRegex.test(value);
+};
+
+const isValidIp = (value) => {
+  if (!value || /\s/.test(value)) {
+    return false;
+  }
+  const ipRegex =
+    /^(25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)(\.(25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)){3}$/;
+  return ipRegex.test(value);
 };
 
 const buildRtspUrl = () => {
@@ -347,6 +576,8 @@ const buildValidationItems = () => {
   const gmailAppPassword = gmailAppPasswordInput.value.trim();
   const gmailSenderName = gmailSenderNameInput.value.trim();
   const respondersMeta = getResponderStats();
+  const previewConnectivity = statusStates.get("Preview connectivity");
+  const previewOk = previewConnectivity === "ok";
 
   pushItem(
     "Preview interval",
@@ -358,22 +589,38 @@ const buildValidationItems = () => {
     const isRtsp = streamUrl.startsWith("rtsp://");
     pushItem(
       "Stream URL",
-      isRtsp ? "ok" : "warn",
-      isRtsp ? "RTSP format detected." : "RTSP expected. Provide rtsp:// if available."
+      isRtsp ? "ok" : previewOk ? "info" : "warn",
+      isRtsp
+        ? "RTSP format detected."
+        : previewOk
+          ? "RTSP optional while preview is healthy."
+          : "RTSP expected. Provide rtsp:// if available."
     );
     pushItem(
       "RTSP credentials",
-      rtspUser && rtspPass ? "ok" : "warn",
-      rtspUser && rtspPass ? "Credentials provided." : "Add username + password for RTSP."
+      rtspUser && rtspPass ? "ok" : previewOk ? "info" : "warn",
+      rtspUser && rtspPass
+        ? "Credentials provided."
+        : previewOk
+          ? "RTSP credentials optional while preview is healthy."
+          : "Add username + password for RTSP."
     );
     const tapoPattern = /^rtsp:\/\/[^:@\s]+:[^@\s]+@[^\s:]+:554\/stream[12]$/;
     pushItem(
       "Tapo URL pattern",
-      tapoPattern.test(streamUrl) ? "ok" : "warn",
-      "Expected rtsp://user:pass@IP:554/stream1 or stream2."
+      tapoPattern.test(streamUrl) ? "ok" : previewOk ? "info" : "warn",
+      previewOk
+        ? "Tapo pattern optional while preview is healthy."
+        : "Expected rtsp://user:pass@IP:554/stream1 or stream2."
     );
   } else {
-    pushItem("Stream URL", "warn", "Provide the RTSP URL from your Tapo camera.");
+    pushItem(
+      "Stream URL",
+      previewOk ? "info" : "warn",
+      previewOk
+        ? "RTSP optional while preview is healthy."
+        : "Provide the RTSP URL from your Tapo camera."
+    );
   }
 
   if (previewModeSelect.value === "rtsp") {
@@ -398,11 +645,19 @@ const buildValidationItems = () => {
     profile ? `Selected ${profile} profile.` : "Select main or sub stream."
   );
 
-  pushItem(
-    "Camera IP",
-    cameraIp && isValidHost(cameraIp) ? "ok" : "warn",
-    "Set the camera IP for auto-building RTSP."
-  );
+  if (!cameraIp) {
+    pushItem(
+      "Camera IP",
+      previewOk ? "info" : "warn",
+      previewOk
+        ? "Camera IP optional while preview is healthy."
+        : "Set the camera IP for auto-building RTSP."
+    );
+  } else if (!isValidIp(cameraIp)) {
+    pushItem("Camera IP", "error", "Camera IP must be a valid IPv4 address.");
+  } else {
+    pushItem("Camera IP", "ok", "Camera IP looks valid.");
+  }
 
   pushItem(
     "Ollama host",
@@ -469,6 +724,7 @@ const buildValidationItems = () => {
 
 const runSyntaxChecks = () => {
   const items = buildValidationItems();
+  updatePanelErrors(items);
   items.forEach((item) => addStatus(item.title, item.state, item.detail));
 };
 
@@ -609,6 +865,8 @@ const runChecks = async () => {
   await checkPreviewConnection();
   await checkOllamaConnection();
   checksRunning = false;
+  updatePanelErrors(buildValidationItems());
+  updateReadinessState();
 };
 
 const buildEmailBody = (context) => {
@@ -970,6 +1228,7 @@ const applyConfig = (payload) => {
   syncStreamUrl();
   updateLiveCameraModel();
   updateLiveModelLabel();
+  schedulePanelRecheck();
 };
 
 const setArmedState = (armed) => {
@@ -998,6 +1257,7 @@ const setArmedState = (armed) => {
   if (!armed) {
     stopMonitoring();
   }
+  updateReadinessState();
 };
 
 const handleSaveArm = (event) => {
@@ -1006,6 +1266,7 @@ const handleSaveArm = (event) => {
   }
   clearStatus();
   const items = buildValidationItems();
+  updatePanelErrors(items);
   items.forEach((item) => addStatus(item.title, item.state, item.detail));
   const hasError = items.some((item) => item.state === "error");
   if (hasError) {
@@ -1015,6 +1276,7 @@ const handleSaveArm = (event) => {
       armFeedback.textContent = "Fix the highlighted errors before arming.";
       armFeedback.classList.add("error");
     }
+    openStatusPanel();
     if (saveArmBtn) {
       saveArmBtn.classList.add("arm-error");
       window.setTimeout(() => saveArmBtn.classList.remove("arm-error"), 600);
@@ -1049,6 +1311,7 @@ const handleSaveConfig = (event) => {
   }
   clearStatus();
   const items = buildValidationItems();
+  updatePanelErrors(items);
   items.forEach((item) => addStatus(item.title, item.state, item.detail));
   const hasError = items.some((item) => item.state === "error");
   if (hasError) {
@@ -1057,6 +1320,7 @@ const handleSaveConfig = (event) => {
       armFeedback.textContent = "Fix the highlighted errors before saving.";
       armFeedback.classList.add("error");
     }
+    openStatusPanel();
     return;
   }
 
@@ -1127,8 +1391,26 @@ const fetchModels = async () => {
   const port = Number(ollamaPortInput.value);
   if (!host || !(port >= 1 && port <= 65535)) {
     addStatus("Model list", "warn", "Set a valid Ollama host + port first.");
+    setModelFetchStatus("error", "Set a valid Ollama host + port first.");
     return;
   }
+  if (fetchModelsInFlight) {
+    setModelFetchStatus("info", "Waiting for Ollama...");
+    return;
+  }
+  fetchModelsInFlight = true;
+  if (fetchModelsBtn) {
+    fetchModelsBtn.disabled = true;
+  }
+  setModelFetchStatus("info", "Starting model fetch...");
+  if (fetchModelsWaitingTimer) {
+    window.clearTimeout(fetchModelsWaitingTimer);
+  }
+  fetchModelsWaitingTimer = window.setTimeout(() => {
+    if (fetchModelsInFlight) {
+      setModelFetchStatus("info", "Waiting for Ollama...");
+    }
+  }, 250);
   try {
     const response = await fetch(
       `/api/ollama-tags?host=${encodeURIComponent(host)}&port=${port}`
@@ -1172,11 +1454,23 @@ const fetchModels = async () => {
         detail = `Loaded ${ollamaModels.length} models (installed: ${installed}, running: ${running}).`;
       }
       addStatus("Model list", "ok", detail);
+      setModelFetchStatus("ok", detail);
       return;
     }
     addStatus("Model list", "error", payload.error || "Failed to load models.");
+    setModelFetchStatus("error", payload.error || "Failed to load models.");
   } catch (error) {
     addStatus("Model list", "error", "Failed to reach Ollama host.");
+    setModelFetchStatus("error", "Failed to reach Ollama host.");
+  } finally {
+    fetchModelsInFlight = false;
+    if (fetchModelsBtn) {
+      fetchModelsBtn.disabled = false;
+    }
+    if (fetchModelsWaitingTimer) {
+      window.clearTimeout(fetchModelsWaitingTimer);
+      fetchModelsWaitingTimer = null;
+    }
   }
 };
 
@@ -1386,6 +1680,7 @@ const renderResponders = () => {
     empty.className = "list-empty";
     empty.textContent = "No responders added yet.";
     respondersList.appendChild(empty);
+    schedulePanelRecheck();
     return;
   }
 
@@ -1413,6 +1708,7 @@ const renderResponders = () => {
     item.appendChild(remove);
     respondersList.appendChild(item);
   });
+  schedulePanelRecheck();
 };
 
 const resetFields = () => {
@@ -1461,13 +1757,77 @@ if (cameraModelInput) {
 rtspUserInput.addEventListener("input", syncStreamUrl);
 rtspPassInput.addEventListener("input", syncStreamUrl);
 streamProfileSelect.addEventListener("change", syncStreamUrl);
+if (ollamaHostInput) {
+  ollamaHostInput.addEventListener("change", scheduleOllamaConnectivityCheck);
+  ollamaHostInput.addEventListener("blur", scheduleOllamaConnectivityCheck);
+}
+if (ollamaPortInput) {
+  ollamaPortInput.addEventListener("change", scheduleOllamaConnectivityCheck);
+  ollamaPortInput.addEventListener("blur", scheduleOllamaConnectivityCheck);
+}
+if (previewUrlInput) {
+  previewUrlInput.addEventListener("change", schedulePreviewConnectivityCheck);
+  previewUrlInput.addEventListener("blur", schedulePreviewConnectivityCheck);
+}
+if (streamUrlInput) {
+  streamUrlInput.addEventListener("change", schedulePreviewConnectivityCheck);
+  streamUrlInput.addEventListener("blur", schedulePreviewConnectivityCheck);
+}
+if (previewModeSelect) {
+  previewModeSelect.addEventListener("change", schedulePreviewConnectivityCheck);
+  previewModeSelect.addEventListener("blur", schedulePreviewConnectivityCheck);
+}
+if (rtspUserInput) {
+  rtspUserInput.addEventListener("change", schedulePreviewConnectivityCheck);
+  rtspUserInput.addEventListener("blur", schedulePreviewConnectivityCheck);
+}
+if (rtspPassInput) {
+  rtspPassInput.addEventListener("change", schedulePreviewConnectivityCheck);
+  rtspPassInput.addEventListener("blur", schedulePreviewConnectivityCheck);
+}
+if (cameraIpInput) {
+  cameraIpInput.addEventListener("change", schedulePreviewConnectivityCheck);
+  cameraIpInput.addEventListener("blur", schedulePreviewConnectivityCheck);
+}
 runChecksBtn.addEventListener("click", runChecks);
-clearChecksBtn.addEventListener("click", clearStatus);
+clearChecksBtn.addEventListener("click", () => {
+  clearStatus();
+  clearPanelErrors();
+});
+if (collapseAllBtn) {
+  collapseAllBtn.addEventListener("click", collapseAllPanels);
+}
+document.addEventListener("click", (event) => {
+  const trigger = event.target.closest("#collapse-all");
+  if (!trigger) {
+    return;
+  }
+  collapseAllPanels();
+});
 if (testInferenceBtn) {
   testInferenceBtn.addEventListener("click", runInferenceTest);
 }
 if (testAlertingBtn) {
   testAlertingBtn.addEventListener("click", testAlerting);
+}
+if (cameraForm) {
+  cameraForm.addEventListener("change", schedulePanelRecheck);
+  cameraForm.addEventListener("blur", schedulePanelRecheck, true);
+}
+if (ollamaForm) {
+  ollamaForm.addEventListener("change", schedulePanelRecheck);
+  ollamaForm.addEventListener("blur", schedulePanelRecheck, true);
+}
+if (alertForm) {
+  alertForm.addEventListener("change", schedulePanelRecheck);
+  alertForm.addEventListener("blur", schedulePanelRecheck, true);
+}
+if (respondersForm) {
+  respondersForm.addEventListener("change", schedulePanelRecheck);
+  respondersForm.addEventListener("blur", schedulePanelRecheck, true);
+}
+if (statusErrorsOnlyToggle) {
+  statusErrorsOnlyToggle.addEventListener("change", applyStatusFilter);
 }
 if (debugValidationBtn) {
   debugValidationBtn.addEventListener("click", () => {
@@ -1487,6 +1847,19 @@ if (debugValidationBtn) {
     details.forEach((line) => addStatus("Validation", "info", line));
   });
 }
+if (armFeedback) {
+  const observer = new MutationObserver(() => {
+    const message = armFeedback.textContent.trim();
+    if (message === "Fix the highlighted errors before arming.") {
+      openStatusPanel();
+    }
+  });
+  observer.observe(armFeedback, {
+    childList: true,
+    subtree: true,
+    characterData: true,
+  });
+}
 if (saveArmBtn) {
   saveArmBtn.addEventListener("click", handleSaveArm);
 }
@@ -1496,7 +1869,9 @@ if (saveConfigBtn) {
 if (disarmBtn) {
   disarmBtn.addEventListener("click", () => {
     setArmedState(false);
+    updatePanelErrors(buildValidationItems());
     addStatus("Disarm", "ok", "Monitoring stopped.");
+    updateReadinessState(true);
     if (armFeedback) {
       armFeedback.textContent = "System disarmed.";
       armFeedback.classList.remove("error");

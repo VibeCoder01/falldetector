@@ -27,7 +27,7 @@ snapshot images.
 ## Setup
 
 ```bash
-python -m venv .venv
+python3 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
 python server.py
@@ -56,11 +56,13 @@ Emails include the AI assessment text plus the snapshot image inline.
 
 ## Usage Tips
 
-- Use the **Status & Checks** panel to validate inputs and test connectivity.
+- Use the **Status & Checks** panel to validate inputs and test connectivity. Use
+  **Show errors only** to focus on failures.
 - **Run inference now** sends a single inference request and, if triggered,
   sends an email alert.
 - **Save & Arm** starts continuous monitoring on the configured interval.
 - **Disarm** stops monitoring.
+- Panels collapse as they pass validation and re-expand when changes are needed.
 
 ## Security Notes
 

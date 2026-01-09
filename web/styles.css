@@ -217,6 +217,12 @@ main {
   padding: 0 8vw 80px;
 }
 
+.panel-controls {
+  display: flex;
+  justify-content: flex-end;
+  margin: 0 0 16px;
+}
+
 .grid {
   display: grid;
   gap: 24px;
@@ -233,8 +239,26 @@ main {
   gap: 16px;
 }
 
+.panel.has-error {
+  background: #ffe6e6;
+}
+
 .panel.collapsible {
   padding: 0;
+}
+
+.panel.collapsible.has-error summary,
+.panel.collapsible.has-error .panel-body {
+  background: #ffe6e6;
+}
+
+.panel.has-valid {
+  background: #e6f6e9;
+}
+
+.panel.collapsible.has-valid summary,
+.panel.collapsible.has-valid .panel-body {
+  background: #e6f6e9;
 }
 
 .panel.collapsible summary {
@@ -568,6 +592,18 @@ select:focus {
   flex-wrap: wrap;
   gap: 16px;
   box-shadow: var(--shadow);
+}
+
+.cta.state-required {
+  background: linear-gradient(120deg, #ffe6e6, #ffd6d6);
+}
+
+.cta.state-ready {
+  background: linear-gradient(120deg, #ffe9c7, #ffd8a6);
+}
+
+.cta.state-armed {
+  background: linear-gradient(120deg, #e2f6e8, #c7eed4);
 }
 
 .arm-feedback {

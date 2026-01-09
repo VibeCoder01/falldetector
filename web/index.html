@@ -67,8 +67,11 @@
     </header>
 
     <main>
+      <div class="panel-controls">
+        <button type="button" class="ghost small" id="collapse-all">Collapse all panels</button>
+      </div>
       <section class="grid">
-        <details class="panel collapsible" open>
+        <details class="panel collapsible" id="camera-panel" open>
           <summary>
             <div class="panel-heading">
               <h2>Camera & Stream</h2>
@@ -143,7 +146,7 @@
           </div>
         </details>
 
-        <details class="panel collapsible" open>
+        <details class="panel collapsible" id="ollama-panel" open>
           <summary>
             <div class="panel-heading">
               <h2>Ollama Analyzer</h2>
@@ -174,6 +177,7 @@
                 <button type="button" class="ghost small" id="pull-model">Pull Model</button>
                 <button type="button" class="ghost small" id="cancel-pull">Cancel</button>
               </div>
+              <div class="inline-status muted" id="model-fetch-status">Idle.</div>
               <div class="inline-status muted" id="model-pull-status">Idle.</div>
               <progress id="model-pull-progress" value="0" max="100"></progress>
               <input
@@ -205,7 +209,7 @@
           </div>
         </details>
 
-        <details class="panel collapsible" open>
+        <details class="panel collapsible" id="alert-panel" open>
           <summary>
             <div class="panel-heading">
               <h2>Alert Routing</h2>
@@ -258,26 +262,37 @@
               <button type="button" class="ghost small" id="test-alerting">Test alerting</button>
               <button type="button" class="ghost small" id="debug-validation">Show validation details</button>
             </div>
+            <label class="toggle">
+              <input type="checkbox" id="status-errors-only" />
+              <span>Show errors only</span>
+            </label>
             <div class="status-list" id="status-list"></div>
           </div>
         </details>
 
-        <article class="panel" id="responses-panel">
-          <h2>AI Responses</h2>
-          <p class="muted">Last 48 hours of Ollama detections.</p>
-          <div class="actions">
-            <label class="toggle">
-              <input type="checkbox" id="filter-yes-only" />
-              <span>Show YES only</span>
-            </label>
-            <button type="button" class="ghost small" id="refresh-responses">Refresh</button>
+        <details class="panel collapsible" id="responses-panel" open>
+          <summary>
+            <div class="panel-heading">
+              <h2>AI Responses</h2>
+              <p class="muted">Last 48 hours of Ollama detections.</p>
+            </div>
+            <span class="panel-chevron" aria-hidden="true"></span>
+          </summary>
+          <div class="panel-body">
+            <div class="actions">
+              <label class="toggle">
+                <input type="checkbox" id="filter-yes-only" />
+                <span>Show YES only</span>
+              </label>
+              <button type="button" class="ghost small" id="refresh-responses">Refresh</button>
+            </div>
+            <div class="responses-window" id="responses-window">
+              <div class="list-empty">No responses yet.</div>
+            </div>
           </div>
-          <div class="responses-window" id="responses-window">
-            <div class="list-empty">No responses yet.</div>
-          </div>
-        </article>
+        </details>
 
-        <details class="panel wide collapsible" open>
+        <details class="panel wide collapsible" id="responders-panel" open>
           <summary>
             <div class="panel-heading">
               <h2>Responders</h2>
@@ -319,9 +334,9 @@
         </details>
       </section>
 
-      <section class="cta">
+      <section class="cta state-required">
         <div>
-          <h2>Ready to arm the system?</h2>
+          <h2 id="cta-title">Configuration required.</h2>
           <p class="muted">
             Save the configuration and start the monitoring loop. Alerts will
             fire as soon as a fall is detected.
