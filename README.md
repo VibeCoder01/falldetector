@@ -68,26 +68,6 @@ Emails include the AI assessment text plus the snapshot image inline.
 - **Disarm** stops monitoring.
 - Panels collapse as they pass validation and re-expand when changes are needed.
 
-## Security Notes
-
-- Do not commit real Gmail app passwords or private IPs to source control.
-- Treat exported config files as sensitive if they contain credentials.
-
-## GitHub Upload
-
-```bash
-git init
-git add .
-git commit -m "Initial commit"
-```
-
-Then create a new GitHub repo and add it as `origin`:
-
-```bash
-git remote add origin git@github.com:YOUR_USER/YOUR_REPO.git
-git push -u origin main
-```
-
 ## License
 
 MIT License. See `LICENSE`.
