@@ -55,6 +55,7 @@ const armFeedback = document.querySelector("#arm-feedback");
 const ctaSection = document.querySelector(".cta");
 const ctaTitle = document.querySelector("#cta-title");
 const statusErrorsOnlyToggle = document.querySelector("#status-errors-only");
+const autoMinimalModeToggle = document.querySelector("#auto-minimal-mode");
 const statusPanel = document.querySelector("#status-panel");
 const cameraPanel = document.querySelector("#camera-panel");
 const ollamaPanel = document.querySelector("#ollama-panel");
@@ -77,6 +78,8 @@ const testInferenceBtn = document.querySelector("#test-inference");
 const testAlertingBtn = document.querySelector("#test-alerting");
 const debugValidationBtn = document.querySelector("#debug-validation");
 const collapseAllBtn = document.querySelector("#collapse-all");
+const minimalModeBtn = document.querySelector("#minimal-mode");
+const normalModeBtn = document.querySelector("#normal-mode");
 
 const fields = {
   name: document.querySelector("#responder-name"),
@@ -114,6 +117,9 @@ const statusStates = new Map();
 let previewCheckInFlight = false;
 let activeCameraId = null;
 let monitorAllCameras = false;
+let minimalMode = false;
+let minimalModePreference = false;
+let autoMinimalMode = true;
 
 const updateReadinessState = (forceReady = false) => {
   if (!ctaSection || !ctaTitle) {
@@ -404,6 +410,38 @@ const updateLiveCameraModel = () => {
   }
   const model = cameraModelInput ? cameraModelInput.value.trim() : "";
   liveCameraModelLabel.textContent = model || DEFAULT_CAMERA_MODEL;
+};
+
+const setMinimalMode = (enabled, persist = true) => {
+  if (!armedState && enabled) {
+    return;
+  }
+  minimalMode = enabled;
+  if (persist) {
+    minimalModePreference = enabled;
+    localStorage.setItem(
+      "fallDetectorMinimalMode",
+      enabled ? "true" : "false"
+    );
+  }
+  document.body.classList.toggle("minimal-mode", enabled);
+  if (enabled && responsesPanel) {
+    responsesPanel.open = true;
+    responsesPanel.setAttribute("open", "");
+  }
+};
+
+const setAutoMinimalMode = (enabled, persist = true) => {
+  autoMinimalMode = enabled;
+  if (autoMinimalModeToggle) {
+    autoMinimalModeToggle.checked = enabled;
+  }
+  if (persist) {
+    localStorage.setItem(
+      "fallDetectorAutoMinimalMode",
+      enabled ? "true" : "false"
+    );
+  }
 };
 
 const createCameraId = () => {
@@ -1298,6 +1336,9 @@ const buildConfigPayload = () => {
       gmailSenderName: gmailSenderNameInput.value.trim(),
     },
     responders: responders.map((responder) => ({ ...responder })),
+    ui: {
+      autoMinimalMode,
+    },
     savedAt: new Date().toISOString(),
   };
 };
@@ -1406,6 +1447,9 @@ const applyConfig = (payload) => {
       gmailSenderNameInput.value = alerts.gmailSenderName;
     }
   }
+  if (payload.ui && payload.ui.autoMinimalMode !== undefined) {
+    setAutoMinimalMode(Boolean(payload.ui.autoMinimalMode));
+  }
   if (Array.isArray(payload.responders)) {
     responders.splice(0, responders.length, ...payload.responders);
     renderResponders();
@@ -1419,6 +1463,7 @@ const applyConfig = (payload) => {
 
 const setArmedState = (armed) => {
   armedState = armed;
+  document.body.classList.toggle("armed", armed);
   if (saveArmBtn) {
     saveArmBtn.textContent = armed ? "Armed ✓" : "Save & Arm";
     saveArmBtn.classList.toggle("armed", armed);
@@ -1445,6 +1490,9 @@ const setArmedState = (armed) => {
   }
   if (!armed) {
     stopMonitoring();
+    setMinimalMode(false, false);
+  } else {
+    setMinimalMode(minimalModePreference, false);
   }
   updateReadinessState();
 };
@@ -1477,6 +1525,9 @@ const handleSaveArm = (event) => {
   saveConfigToStorage(payload);
   alertCount = 0;
   setArmedState(true);
+  if (autoMinimalMode) {
+    setMinimalMode(true);
+  }
   addStatus("Save & Arm", "ok", "Configuration saved locally. Monitoring armed.");
   if (armFeedback) {
     const timestamp = new Date().toLocaleTimeString();
@@ -2064,6 +2115,12 @@ document.addEventListener("click", (event) => {
   }
   collapseAllPanels();
 });
+if (minimalModeBtn) {
+  minimalModeBtn.addEventListener("click", () => setMinimalMode(true));
+}
+if (normalModeBtn) {
+  normalModeBtn.addEventListener("click", () => setMinimalMode(false));
+}
 if (testInferenceBtn) {
   testInferenceBtn.addEventListener("click", runInferenceTest);
 }
@@ -2098,6 +2155,11 @@ if (respondersForm) {
 }
 if (statusErrorsOnlyToggle) {
   statusErrorsOnlyToggle.addEventListener("change", applyStatusFilter);
+}
+if (autoMinimalModeToggle) {
+  autoMinimalModeToggle.addEventListener("change", () => {
+    setAutoMinimalMode(autoMinimalModeToggle.checked);
+  });
 }
 if (debugValidationBtn) {
   debugValidationBtn.addEventListener("click", () => {
@@ -2382,12 +2444,23 @@ if (ollamaCustomInput) {
 }
 
 initializeCameraState();
+const storedMinimalMode = localStorage.getItem("fallDetectorMinimalMode");
+minimalModePreference = storedMinimalMode === "true";
+const storedAutoMinimalMode = localStorage.getItem("fallDetectorAutoMinimalMode");
+if (storedAutoMinimalMode !== null) {
+  autoMinimalMode = storedAutoMinimalMode === "true";
+}
+if (autoMinimalModeToggle) {
+  autoMinimalModeToggle.checked = autoMinimalMode;
+}
+
 renderResponders();
 syncCaptureInterval();
 syncStreamUrl();
 updateLiveCameraModel();
 updateLiveModelLabel();
 setArmedState(armedState);
+setMinimalMode(minimalModePreference, false);
 fetchResponses();
 toggleCustomModelInput();
 setModelPullStatus("", "Idle.");

@@ -7,6 +7,7 @@ snapshot images.
 ## Features
 
 - Multi-camera profiles with active or "All cameras" monitoring.
+- Minimal Monitoring mode with optional auto-switch on arm.
 - RTSP + MJPEG preview options with snapshot polling.
 - Ollama model selection, inference scheduling, and response history.
 - Gmail alerts with inline images and AI assessment text.
@@ -56,6 +57,7 @@ Emails include the AI assessment text plus the snapshot image inline.
 - **Import Config** restores settings from a JSON file.
 - Camera profiles are stored as an array. The active profile and "monitor all"
   selection are persisted in the config.
+- The auto-minimal preference is stored under `ui.autoMinimalMode`.
 
 ## Usage Tips
 
@@ -65,6 +67,8 @@ Emails include the AI assessment text plus the snapshot image inline.
   sends an email alert.
 - **Save & Arm** starts continuous monitoring on the configured interval for the
   active camera or all cameras.
+- Enable **Auto switch to Minimal Monitoring when armed** to hide all panels
+  except the title and AI Responses while armed.
 - **Disarm** stops monitoring.
 - Panels collapse as they pass validation and re-expand when changes are needed.
 

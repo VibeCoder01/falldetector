@@ -12,7 +12,7 @@
     />
     <link rel="icon" href="favicon.svg" type="image/svg+xml" />
     <link rel="icon" href="favicon.png" type="image/png" sizes="32x32" />
-    <link rel="stylesheet" href="styles.css?v=2" />
+    <link rel="stylesheet" href="styles.css?v=4" />
   </head>
   <body>
     <div class="glow"></div>
@@ -25,6 +25,8 @@
           notify caregivers the instant someone is detected on the floor.
         </p>
         <div class="hero-actions">
+          <button type="button" class="ghost small" id="minimal-mode">Minimal Monitoring</button>
+          <button type="button" class="ghost small" id="normal-mode">Return to Normal</button>
         </div>
         <div class="status-strip">
           <div>
@@ -275,6 +277,10 @@
               <input type="checkbox" id="status-errors-only" />
               <span>Show errors only</span>
             </label>
+            <label class="toggle">
+              <input type="checkbox" id="auto-minimal-mode" />
+              <span>Auto switch to Minimal Monitoring when armed</span>
+            </label>
             <div class="status-list" id="status-list"></div>
           </div>
         </details>
@@ -363,6 +369,6 @@
       </section>
     </main>
 
-    <script src="app.js?v=2"></script>
+    <script src="app.js?v=4"></script>
   </body>
 </html>

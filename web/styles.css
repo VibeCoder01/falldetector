@@ -118,6 +118,23 @@ button:hover {
   font-size: 0.85rem;
 }
 
+#minimal-mode,
+#normal-mode {
+  display: none;
+}
+
+body.armed #minimal-mode {
+  display: inline-flex;
+}
+
+body.minimal-mode #minimal-mode {
+  display: none;
+}
+
+body.armed.minimal-mode #normal-mode {
+  display: inline-flex;
+}
+
 .status-strip {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
@@ -145,6 +162,27 @@ button:hover {
   display: flex;
   flex-direction: column;
   gap: 16px;
+}
+
+body.minimal-mode .hero-card,
+body.minimal-mode .status-strip,
+body.minimal-mode .panel-controls,
+body.minimal-mode .cta,
+body.minimal-mode .eyebrow,
+body.minimal-mode .lead {
+  display: none;
+}
+
+body.minimal-mode .panel.collapsible:not(#responses-panel) {
+  display: none;
+}
+
+body.minimal-mode .hero-actions > * {
+  display: none;
+}
+
+body.armed.minimal-mode .hero-actions #normal-mode {
+  display: inline-flex;
 }
 
 .card-header,
