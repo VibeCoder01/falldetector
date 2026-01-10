@@ -25,6 +25,7 @@ snapshot images.
 - Python 3.10+ (tested on 3.12).
 - `opencv-python` for RTSP snapshot capture.
 - Gmail account with an App Password (2FA enabled).
+- Ollama instance running a vision capable model.
 
 ## Setup
 
