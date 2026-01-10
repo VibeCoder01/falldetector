@@ -280,6 +280,9 @@ class RequestHandler(SimpleHTTPRequestHandler):
         timeout_seconds = payload.get("timeoutSeconds")
         stream_url = str(payload.get("streamUrl", "")).strip()
         preview_url = str(payload.get("previewUrl", "")).strip()
+        camera_id = str(payload.get("cameraId", "")).strip()
+        camera_name = str(payload.get("cameraName", "")).strip()
+        camera_model = str(payload.get("cameraModel", "")).strip()
 
         if not host or not model or not prompt:
             return _json_response(
@@ -374,6 +377,9 @@ class RequestHandler(SimpleHTTPRequestHandler):
             "text": text,
             "model": model,
             "triggered": triggered,
+            "camera_id": camera_id,
+            "camera_name": camera_name,
+            "camera_model": camera_model,
         }
         self._store_response(entry)
         return _json_response(
@@ -384,6 +390,9 @@ class RequestHandler(SimpleHTTPRequestHandler):
                 "triggered": triggered,
                 "image": image_b64,
                 "image_type": "image/jpeg",
+                "camera_id": camera_id,
+                "camera_name": camera_name,
+                "camera_model": camera_model,
             },
         )
 

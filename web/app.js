@@ -18,6 +18,10 @@ const streamUrlInput = document.querySelector("#stream-url");
 const cameraNameInput = document.querySelector("#camera-name");
 const cameraModelInput = document.querySelector("#camera-model");
 const cameraIpInput = document.querySelector("#camera-ip");
+const cameraSelect = document.querySelector("#camera-select");
+const addCameraBtn = document.querySelector("#add-camera");
+const removeCameraBtn = document.querySelector("#remove-camera");
+const cameraSelectStatus = document.querySelector("#camera-select-status");
 const rtspUserInput = document.querySelector("#rtsp-user");
 const rtspPassInput = document.querySelector("#rtsp-pass");
 const streamProfileSelect = document.querySelector("#stream-profile");
@@ -82,6 +86,7 @@ const fields = {
 };
 
 const responders = [];
+const cameras = [];
 const DEFAULT_SNAPSHOT_INTERVAL = 20;
 const DEFAULT_TIMEOUT_SECONDS = 180;
 const DEFAULT_CAMERA_MODEL = "Tapo C210";
@@ -107,6 +112,8 @@ let fetchModelsWaitingTimer = null;
 let panelValidationTimer = null;
 const statusStates = new Map();
 let previewCheckInFlight = false;
+let activeCameraId = null;
+let monitorAllCameras = false;
 
 const updateReadinessState = (forceReady = false) => {
   if (!ctaSection || !ctaTitle) {
@@ -397,6 +404,193 @@ const updateLiveCameraModel = () => {
   }
   const model = cameraModelInput ? cameraModelInput.value.trim() : "";
   liveCameraModelLabel.textContent = model || DEFAULT_CAMERA_MODEL;
+};
+
+const createCameraId = () => {
+  if (typeof crypto !== "undefined" && crypto.randomUUID) {
+    return crypto.randomUUID();
+  }
+  return `cam-${Date.now()}-${Math.floor(Math.random() * 100000)}`;
+};
+
+const normalizeCamera = (camera) => {
+  const snapshotInterval = Number(camera.snapshotInterval);
+  return {
+    id: camera.id || createCameraId(),
+    name: camera.name ? String(camera.name) : "",
+    model: camera.model ? String(camera.model) : "",
+    ip: camera.ip ? String(camera.ip) : "",
+    streamUrl: camera.streamUrl ? String(camera.streamUrl) : "",
+    rtspUser: camera.rtspUser ? String(camera.rtspUser) : "",
+    rtspPass: camera.rtspPass ? String(camera.rtspPass) : "",
+    streamProfile: camera.streamProfile ? String(camera.streamProfile) : "main",
+    previewUrl: camera.previewUrl ? String(camera.previewUrl) : "",
+    previewMode: camera.previewMode ? String(camera.previewMode) : "mjpeg",
+    snapshotInterval: Number.isFinite(snapshotInterval)
+      ? snapshotInterval
+      : DEFAULT_SNAPSHOT_INTERVAL,
+    motionSnapshotting:
+      camera.motionSnapshotting !== undefined
+        ? Boolean(camera.motionSnapshotting)
+        : true,
+  };
+};
+
+const buildCameraFromForm = () => ({
+  id: activeCameraId || createCameraId(),
+  name: cameraNameInput ? cameraNameInput.value.trim() : "",
+  model: cameraModelInput ? cameraModelInput.value.trim() : "",
+  ip: cameraIpInput.value.trim(),
+  streamUrl: streamUrlInput.value.trim(),
+  rtspUser: rtspUserInput.value.trim(),
+  rtspPass: rtspPassInput.value.trim(),
+  streamProfile: streamProfileSelect.value,
+  previewUrl: previewUrlInput.value.trim(),
+  previewMode: previewModeSelect.value,
+  snapshotInterval: Number(snapshotIntervalInput.value) || DEFAULT_SNAPSHOT_INTERVAL,
+  motionSnapshotting: motionSnapshotToggle ? motionSnapshotToggle.checked : false,
+});
+
+const buildBlankCamera = () => ({
+  id: createCameraId(),
+  name: "",
+  model: "",
+  ip: "",
+  streamUrl: "",
+  rtspUser: "",
+  rtspPass: "",
+  streamProfile: "main",
+  previewUrl: "",
+  previewMode: "mjpeg",
+  snapshotInterval: DEFAULT_SNAPSHOT_INTERVAL,
+  motionSnapshotting: true,
+});
+
+const getActiveCamera = () =>
+  cameras.find((camera) => camera.id === activeCameraId) || cameras[0] || null;
+
+const updateActiveCameraFromForm = () => {
+  const active = getActiveCamera();
+  if (!active) {
+    return;
+  }
+  Object.assign(active, buildCameraFromForm());
+};
+
+const applyCameraToForm = (camera) => {
+  if (!camera) {
+    return;
+  }
+  if (cameraNameInput) {
+    cameraNameInput.value = camera.name || "";
+  }
+  if (cameraModelInput) {
+    cameraModelInput.value = camera.model || "";
+  }
+  if (cameraIpInput) {
+    cameraIpInput.value = camera.ip || "";
+  }
+  if (streamUrlInput) {
+    streamUrlInput.value = camera.streamUrl || "";
+  }
+  if (rtspUserInput) {
+    rtspUserInput.value = camera.rtspUser || "";
+  }
+  if (rtspPassInput) {
+    rtspPassInput.value = camera.rtspPass || "";
+  }
+  if (streamProfileSelect) {
+    streamProfileSelect.value = camera.streamProfile || "main";
+  }
+  if (previewUrlInput) {
+    previewUrlInput.value = camera.previewUrl || "";
+  }
+  if (previewModeSelect) {
+    previewModeSelect.value = camera.previewMode || "mjpeg";
+  }
+  if (snapshotIntervalInput) {
+    snapshotIntervalInput.value =
+      Number(camera.snapshotInterval) || DEFAULT_SNAPSHOT_INTERVAL;
+  }
+  if (motionSnapshotToggle) {
+    motionSnapshotToggle.checked =
+      camera.motionSnapshotting !== undefined
+        ? Boolean(camera.motionSnapshotting)
+        : true;
+  }
+  stopPreview();
+  syncCaptureInterval();
+  updateLiveCameraModel();
+  schedulePanelRecheck();
+};
+
+const renderCameraSelect = () => {
+  if (!cameraSelect) {
+    return;
+  }
+  if (!activeCameraId && cameras.length > 0) {
+    activeCameraId = cameras[0].id;
+  }
+  cameraSelect.innerHTML = "";
+  const allOption = document.createElement("option");
+  allOption.value = "all";
+  allOption.textContent = `All cameras (${cameras.length})`;
+  cameraSelect.appendChild(allOption);
+  cameras.forEach((camera, index) => {
+    const option = document.createElement("option");
+    const label = camera.name || `Camera ${index + 1}`;
+    option.value = camera.id;
+    option.textContent = camera.model ? `${label} · ${camera.model}` : label;
+    cameraSelect.appendChild(option);
+  });
+  if (monitorAllCameras) {
+    cameraSelect.value = "all";
+  } else if (activeCameraId) {
+    cameraSelect.value = activeCameraId;
+  }
+  if (cameraSelectStatus) {
+    const count = cameras.length;
+    cameraSelectStatus.textContent = monitorAllCameras
+      ? `Monitoring all ${count} camera${count === 1 ? "" : "s"}`
+      : `${count} camera${count === 1 ? "" : "s"}`;
+  }
+  if (removeCameraBtn) {
+    removeCameraBtn.disabled = cameras.length <= 1;
+  }
+};
+
+const setActiveCamera = (cameraId) => {
+  monitorAllCameras = false;
+  activeCameraId = cameraId;
+  const active = getActiveCamera();
+  if (active) {
+    applyCameraToForm(active);
+  }
+  renderCameraSelect();
+};
+
+const initializeCameraState = () => {
+  if (cameras.length > 0) {
+    return;
+  }
+  const initial = normalizeCamera(buildCameraFromForm());
+  cameras.push(initial);
+  activeCameraId = initial.id;
+  renderCameraSelect();
+};
+
+const handleCameraFormUpdate = () => {
+  updateActiveCameraFromForm();
+  renderCameraSelect();
+};
+
+const getMonitoringCameras = () => {
+  updateActiveCameraFromForm();
+  if (monitorAllCameras) {
+    return cameras.slice();
+  }
+  const active = getActiveCamera();
+  return active ? [active] : [];
 };
 
 const addStatus = (title, state, detail) => {
@@ -870,8 +1064,10 @@ const runChecks = async () => {
 };
 
 const buildEmailBody = (context) => {
-  const cameraName = cameraNameInput ? cameraNameInput.value.trim() : "";
-  const cameraModel = cameraModelInput ? cameraModelInput.value.trim() : "";
+  const fallbackName = cameraNameInput ? cameraNameInput.value.trim() : "";
+  const fallbackModel = cameraModelInput ? cameraModelInput.value.trim() : "";
+  const cameraName = context.cameraName || fallbackName;
+  const cameraModel = context.cameraModel || fallbackModel;
   const lines = [
     `Event: ${context.event || "alert"}`,
     `Time: ${new Date().toLocaleString()}`,
@@ -953,6 +1149,8 @@ const runInferenceTest = async () => {
   const streamUrl = streamUrlInput.value.trim();
   const previewUrl = previewUrlInput.value.trim();
   const previewMode = previewModeSelect.value;
+  const cameraName = cameraNameInput ? cameraNameInput.value.trim() : "";
+  const cameraModel = cameraModelInput ? cameraModelInput.value.trim() : "";
 
   if (!host || !(port >= 1 && port <= 65535) || !model || !prompt) {
     addStatus(
@@ -987,6 +1185,9 @@ const runInferenceTest = async () => {
         streamUrl,
         previewUrl,
         previewMode,
+        cameraId: activeCameraId || "",
+        cameraName,
+        cameraModel,
       }),
     });
     const payload = await response.json();
@@ -1070,39 +1271,36 @@ const testAlerting = async () => {
   );
 };
 
-const buildConfigPayload = () => ({
-  camera: {
-    name: cameraNameInput ? cameraNameInput.value.trim() : "",
-    model: cameraModelInput ? cameraModelInput.value.trim() : "",
-    ip: cameraIpInput.value.trim(),
-    streamUrl: streamUrlInput.value.trim(),
-    rtspUser: rtspUserInput.value.trim(),
-    rtspPass: rtspPassInput.value.trim(),
-    streamProfile: streamProfileSelect.value,
-    previewUrl: previewUrlInput.value.trim(),
-    previewMode: previewModeSelect.value,
-    snapshotInterval: Number(snapshotIntervalInput.value) || DEFAULT_SNAPSHOT_INTERVAL,
-    motionSnapshotting: motionSnapshotToggle ? motionSnapshotToggle.checked : false,
-  },
-  ollama: {
-    host: ollamaHostInput.value.trim(),
-    port: Number(ollamaPortInput.value),
-    model: getSelectedModel(),
-    prompt: ollamaPromptInput.value.trim(),
-    trigger: ollamaTriggerInput.value.trim(),
-    timeoutSeconds: Number(ollamaTimeoutInput ? ollamaTimeoutInput.value : "") || DEFAULT_TIMEOUT_SECONDS,
-    intervalSeconds: getInferenceIntervalSeconds(),
-  },
-  alerts: {
-    emailEnabled: alertEmailToggle.checked,
-    senderEmail: senderEmailInput.value.trim(),
-    gmailUser: gmailUserInput.value.trim(),
-    gmailAppPassword: gmailAppPasswordInput.value.trim(),
-    gmailSenderName: gmailSenderNameInput.value.trim(),
-  },
-  responders: responders.map((responder) => ({ ...responder })),
-  savedAt: new Date().toISOString(),
-});
+const buildConfigPayload = () => {
+  updateActiveCameraFromForm();
+  const activeCamera = getActiveCamera();
+  return {
+    cameras: cameras.map((camera) => ({ ...camera })),
+    activeCameraId: activeCamera ? activeCamera.id : null,
+    monitorAllCameras,
+    camera: activeCamera ? { ...activeCamera } : null,
+    ollama: {
+      host: ollamaHostInput.value.trim(),
+      port: Number(ollamaPortInput.value),
+      model: getSelectedModel(),
+      prompt: ollamaPromptInput.value.trim(),
+      trigger: ollamaTriggerInput.value.trim(),
+      timeoutSeconds:
+        Number(ollamaTimeoutInput ? ollamaTimeoutInput.value : "") ||
+        DEFAULT_TIMEOUT_SECONDS,
+      intervalSeconds: getInferenceIntervalSeconds(),
+    },
+    alerts: {
+      emailEnabled: alertEmailToggle.checked,
+      senderEmail: senderEmailInput.value.trim(),
+      gmailUser: gmailUserInput.value.trim(),
+      gmailAppPassword: gmailAppPasswordInput.value.trim(),
+      gmailSenderName: gmailSenderNameInput.value.trim(),
+    },
+    responders: responders.map((responder) => ({ ...responder })),
+    savedAt: new Date().toISOString(),
+  };
+};
 
 const saveConfigToStorage = (payload) => {
   localStorage.setItem("fallDetectorConfig", JSON.stringify(payload));
@@ -1124,42 +1322,30 @@ const applyConfig = (payload) => {
   if (!payload || typeof payload !== "object") {
     return;
   }
-  if (payload.camera) {
-    const camera = payload.camera;
-    const nameInput = document.querySelector("#camera-name");
-    if (nameInput && camera.name) {
-      nameInput.value = camera.name;
+  if (Array.isArray(payload.cameras) && payload.cameras.length > 0) {
+    cameras.splice(
+      0,
+      cameras.length,
+      ...payload.cameras.map((camera) => normalizeCamera(camera))
+    );
+    if (payload.activeCameraId) {
+      activeCameraId = payload.activeCameraId;
+    } else {
+      activeCameraId = cameras[0].id;
     }
-    if (cameraModelInput && camera.model) {
-      cameraModelInput.value = camera.model;
+    monitorAllCameras = Boolean(payload.monitorAllCameras);
+    if (!cameras.some((camera) => camera.id === activeCameraId)) {
+      activeCameraId = cameras[0].id;
     }
-    if (camera.ip) {
-      cameraIpInput.value = camera.ip;
-    }
-    if (camera.streamUrl) {
-      streamUrlInput.value = camera.streamUrl;
-    }
-    if (camera.rtspUser) {
-      rtspUserInput.value = camera.rtspUser;
-    }
-    if (camera.rtspPass) {
-      rtspPassInput.value = camera.rtspPass;
-    }
-    if (camera.streamProfile) {
-      streamProfileSelect.value = camera.streamProfile;
-    }
-    if (camera.previewUrl) {
-      previewUrlInput.value = camera.previewUrl;
-    }
-    if (camera.previewMode) {
-      previewModeSelect.value = camera.previewMode;
-    }
-    if (camera.snapshotInterval) {
-      snapshotIntervalInput.value = camera.snapshotInterval;
-    }
-    if (motionSnapshotToggle && camera.motionSnapshotting !== undefined) {
-      motionSnapshotToggle.checked = Boolean(camera.motionSnapshotting);
-    }
+    renderCameraSelect();
+    applyCameraToForm(getActiveCamera());
+  } else if (payload.camera) {
+    const camera = normalizeCamera(payload.camera);
+    cameras.splice(0, cameras.length, camera);
+    activeCameraId = camera.id;
+    monitorAllCameras = false;
+    renderCameraSelect();
+    applyCameraToForm(camera);
   }
   if (payload.ollama) {
     const ollama = payload.ollama;
@@ -1237,6 +1423,9 @@ const setArmedState = (armed) => {
     saveArmBtn.textContent = armed ? "Armed ✓" : "Save & Arm";
     saveArmBtn.classList.toggle("armed", armed);
     saveArmBtn.setAttribute("aria-pressed", armed ? "true" : "false");
+  }
+  if (responsesPanel) {
+    responsesPanel.classList.toggle("armed-ring", armed);
   }
   if (disarmBtn) {
     disarmBtn.disabled = !armed;
@@ -1362,7 +1551,12 @@ const renderResponses = () => {
     const meta = document.createElement("div");
     meta.className = "response-meta";
     const timestamp = new Date(item.timestamp * 1000);
-    meta.textContent = `${timestamp.toLocaleString()} · ${item.model || "ollama"}`;
+    const cameraLabel = item.camera_name || item.camera_model || "";
+    const metaParts = [timestamp.toLocaleString(), item.model || "ollama"];
+    if (cameraLabel) {
+      metaParts.push(cameraLabel);
+    }
+    meta.textContent = metaParts.join(" · ");
 
     const body = document.createElement("div");
     body.textContent = item.text || "No response text.";
@@ -1544,105 +1738,124 @@ const analyzeOnce = async () => {
   const model = getSelectedModel();
   const prompt = ollamaPromptInput.value.trim();
   const trigger = ollamaTriggerInput.value.trim();
-  const timeoutSeconds = Number(ollamaTimeoutInput ? ollamaTimeoutInput.value : "") || DEFAULT_TIMEOUT_SECONDS;
-  const streamUrl = streamUrlInput.value.trim();
-  const previewUrl = previewUrlInput.value.trim();
-  const previewMode = previewModeSelect.value;
+  const timeoutSeconds =
+    Number(ollamaTimeoutInput ? ollamaTimeoutInput.value : "") ||
+    DEFAULT_TIMEOUT_SECONDS;
+  const camerasToMonitor = getMonitoringCameras();
 
-  if (!host || !port || !model || !prompt) {
+  if (!host || !port || !model || !prompt || camerasToMonitor.length === 0) {
     return;
   }
 
   analyzeInFlight = true;
+  let hadSuccess = false;
+  let hadTimeout = false;
   try {
-    const response = await fetch("/api/ollama-analyze", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        host,
-        port,
-        model,
-        prompt,
-        trigger,
-        timeoutSeconds,
-        streamUrl,
-        previewUrl,
-        previewMode,
-      }),
-    });
-    const payload = await response.json();
-    if (payload.ok) {
-      if (payload.triggered) {
-        alertCount += 1;
-        if (statusAlerts) {
-          statusAlerts.textContent = `${alertCount} sent`;
-        }
-        if (alertEmailToggle.checked) {
-          const emailResult = await sendEmailAlert({
-            event: "fall_detected",
-            subject: "Fall Detector Alert",
-            responseText: payload.response || "",
-            imageBase64: payload.image || "",
-            imageType: payload.image_type || "",
-          });
-          if (!emailResult.ok) {
-            const now = Date.now();
-            if (now - lastEmailAlertErrorAt > 30000) {
-              addStatus(
-                "Email alert",
-                "error",
-                emailResult.error || "Failed to send email alert."
-              );
-              lastEmailAlertErrorAt = now;
+    for (const camera of camerasToMonitor) {
+      const streamUrl = camera.streamUrl || "";
+      const previewUrl = camera.previewUrl || "";
+      const previewMode = camera.previewMode || "mjpeg";
+      const cameraLabel = camera.name || camera.model || "Camera";
+      const response = await fetch("/api/ollama-analyze", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          host,
+          port,
+          model,
+          prompt,
+          trigger,
+          timeoutSeconds,
+          streamUrl,
+          previewUrl,
+          previewMode,
+          cameraId: camera.id,
+          cameraName: camera.name,
+          cameraModel: camera.model,
+        }),
+      });
+      const payload = await response.json();
+      if (payload.ok) {
+        hadSuccess = true;
+        if (payload.triggered) {
+          alertCount += 1;
+          if (statusAlerts) {
+            statusAlerts.textContent = `${alertCount} sent`;
+          }
+          if (alertEmailToggle.checked) {
+            const emailResult = await sendEmailAlert({
+              event: "fall_detected",
+              subject: "Fall Detector Alert",
+              responseText: payload.response || "",
+              imageBase64: payload.image || "",
+              imageType: payload.image_type || "",
+              cameraName: camera.name,
+              cameraModel: camera.model,
+            });
+            if (!emailResult.ok) {
+              const now = Date.now();
+              if (now - lastEmailAlertErrorAt > 30000) {
+                addStatus(
+                  "Email alert",
+                  "error",
+                  emailResult.error || "Failed to send email alert."
+                );
+                lastEmailAlertErrorAt = now;
+              }
+            } else {
+              addStatus("Email alert", "ok", `Email sent for ${cameraLabel}.`);
             }
-          } else {
-            addStatus("Email alert", "ok", "Email sent.");
           }
         }
-      }
-      if (statusInference) {
-        statusInference.textContent = "Active";
-      }
-      consecutiveTimeouts = 0;
-      await fetchResponses();
-      return;
-    }
-    const message = payload.error || "Ollama analysis failed.";
-    const now = Date.now();
-    if (message !== lastAnalyzeError || now - lastAnalyzeErrorAt > 30000) {
-      addStatus("Ollama analysis", "error", message);
-      lastAnalyzeError = message;
-      lastAnalyzeErrorAt = now;
-    }
-    if (statusInference) {
-      statusInference.textContent = "Error";
-    }
-    if (message.toLowerCase().includes("timed out")) {
-      consecutiveTimeouts += 1;
-      if (consecutiveTimeouts >= 3) {
-        stopMonitoring();
-        addStatus(
-          "Monitoring",
-          "warn",
-          "Paused after repeated timeouts. Try a smaller model or longer interval."
-        );
-        if (statusStream) {
-          statusStream.textContent = "Paused";
-        }
-        if (saveArmBtn) {
-          saveArmBtn.textContent = "Resume Monitoring";
-          saveArmBtn.classList.remove("armed");
-        }
-        armedState = false;
       } else {
-        addStatus(
-          "Ollama latency",
-          "warn",
-          "Inference is slow. Consider a smaller model or longer interval."
-        );
+        const message = payload.error || "Ollama analysis failed.";
+        const detail = monitorAllCameras
+          ? `${cameraLabel}: ${message}`
+          : message;
+        const now = Date.now();
+        if (detail !== lastAnalyzeError || now - lastAnalyzeErrorAt > 30000) {
+          addStatus("Ollama analysis", "error", detail);
+          lastAnalyzeError = detail;
+          lastAnalyzeErrorAt = now;
+        }
+        if (message.toLowerCase().includes("timed out")) {
+          hadTimeout = true;
+        }
       }
-    } else {
+    }
+
+    if (hadSuccess && statusInference) {
+      statusInference.textContent = "Active";
+    }
+    if (hadSuccess) {
+      await fetchResponses();
+    }
+    if (hadTimeout) {
+      consecutiveTimeouts += 1;
+    } else if (hadSuccess) {
       consecutiveTimeouts = 0;
+    }
+    if (consecutiveTimeouts >= 3) {
+      stopMonitoring();
+      addStatus(
+        "Monitoring",
+        "warn",
+        "Paused after repeated timeouts. Try a smaller model or longer interval."
+      );
+      if (statusStream) {
+        statusStream.textContent = "Paused";
+      }
+      if (saveArmBtn) {
+        saveArmBtn.textContent = "Resume Monitoring";
+        saveArmBtn.classList.remove("armed");
+      }
+      armedState = false;
+    } else if (hadTimeout) {
+      addStatus(
+        "Ollama latency",
+        "warn",
+        "Inference is slow. Consider a smaller model or longer interval."
+      );
     }
   } catch (error) {
     // Ignore transient failures to keep monitoring running.
@@ -1750,9 +1963,13 @@ previewModeSelect.addEventListener("change", () => {
 });
 snapshotIntervalInput.addEventListener("change", syncCaptureInterval);
 snapshotIntervalInput.addEventListener("input", syncCaptureInterval);
+if (cameraNameInput) {
+  cameraNameInput.addEventListener("input", handleCameraFormUpdate);
+}
 cameraIpInput.addEventListener("input", syncStreamUrl);
 if (cameraModelInput) {
   cameraModelInput.addEventListener("input", updateLiveCameraModel);
+  cameraModelInput.addEventListener("input", handleCameraFormUpdate);
 }
 rtspUserInput.addEventListener("input", syncStreamUrl);
 rtspPassInput.addEventListener("input", syncStreamUrl);
@@ -1789,6 +2006,49 @@ if (cameraIpInput) {
   cameraIpInput.addEventListener("change", schedulePreviewConnectivityCheck);
   cameraIpInput.addEventListener("blur", schedulePreviewConnectivityCheck);
 }
+if (cameraSelect) {
+  cameraSelect.addEventListener("change", () => {
+    updateActiveCameraFromForm();
+    if (cameraSelect.value === "all") {
+      monitorAllCameras = true;
+      renderCameraSelect();
+    } else {
+      setActiveCamera(cameraSelect.value);
+    }
+    schedulePreviewConnectivityCheck();
+  });
+}
+if (addCameraBtn) {
+  addCameraBtn.addEventListener("click", () => {
+    updateActiveCameraFromForm();
+    const newCamera = buildBlankCamera();
+    newCamera.name = `Camera ${cameras.length + 1}`;
+    cameras.push(newCamera);
+    setActiveCamera(newCamera.id);
+    renderCameraSelect();
+  });
+}
+if (removeCameraBtn) {
+  removeCameraBtn.addEventListener("click", () => {
+    if (cameras.length <= 1) {
+      return;
+    }
+    const active = getActiveCamera();
+    const label = active && active.name ? active.name : "this camera";
+    const ok = window.confirm(`Remove ${label}?`);
+    if (!ok) {
+      return;
+    }
+    const index = cameras.findIndex((camera) => camera.id === activeCameraId);
+    if (index === -1) {
+      return;
+    }
+    cameras.splice(index, 1);
+    const next = cameras[Math.max(0, index - 1)] || cameras[0];
+    setActiveCamera(next.id);
+    renderCameraSelect();
+  });
+}
 runChecksBtn.addEventListener("click", runChecks);
 clearChecksBtn.addEventListener("click", () => {
   clearStatus();
@@ -1811,8 +2071,18 @@ if (testAlertingBtn) {
   testAlertingBtn.addEventListener("click", testAlerting);
 }
 if (cameraForm) {
-  cameraForm.addEventListener("change", schedulePanelRecheck);
-  cameraForm.addEventListener("blur", schedulePanelRecheck, true);
+  cameraForm.addEventListener("change", () => {
+    handleCameraFormUpdate();
+    schedulePanelRecheck();
+  });
+  cameraForm.addEventListener(
+    "blur",
+    () => {
+      handleCameraFormUpdate();
+      schedulePanelRecheck();
+    },
+    true
+  );
 }
 if (ollamaForm) {
   ollamaForm.addEventListener("change", schedulePanelRecheck);
@@ -2111,6 +2381,7 @@ if (ollamaCustomInput) {
   ollamaCustomInput.addEventListener("input", updateLiveModelLabel);
 }
 
+initializeCameraState();
 renderResponders();
 syncCaptureInterval();
 syncStreamUrl();

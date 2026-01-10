@@ -1,11 +1,12 @@
 # Fall Detector Control Room
 
-Local control room UI for monitoring a Tapo camera stream and running
+Local control room UI for monitoring Tapo camera streams and running
 fall-detection analysis via Ollama. Includes Gmail alert delivery with inline
 snapshot images.
 
 ## Features
 
+- Multi-camera profiles with active or "All cameras" monitoring.
 - RTSP + MJPEG preview options with snapshot polling.
 - Ollama model selection, inference scheduling, and response history.
 - Gmail alerts with inline images and AI assessment text.
@@ -53,6 +54,8 @@ Emails include the AI assessment text plus the snapshot image inline.
 - **Save** stores config in localStorage.
 - **Export Config** downloads a JSON file.
 - **Import Config** restores settings from a JSON file.
+- Camera profiles are stored as an array. The active profile and "monitor all"
+  selection are persisted in the config.
 
 ## Usage Tips
 
@@ -60,7 +63,8 @@ Emails include the AI assessment text plus the snapshot image inline.
   **Show errors only** to focus on failures.
 - **Run inference now** sends a single inference request and, if triggered,
   sends an email alert.
-- **Save & Arm** starts continuous monitoring on the configured interval.
+- **Save & Arm** starts continuous monitoring on the configured interval for the
+  active camera or all cameras.
 - **Disarm** stops monitoring.
 - Panels collapse as they pass validation and re-expand when changes are needed.
 
@@ -68,6 +72,21 @@ Emails include the AI assessment text plus the snapshot image inline.
 
 - Do not commit real Gmail app passwords or private IPs to source control.
 - Treat exported config files as sensitive if they contain credentials.
+
+## GitHub Upload
+
+```bash
+git init
+git add .
+git commit -m "Initial commit"
+```
+
+Then create a new GitHub repo and add it as `origin`:
+
+```bash
+git remote add origin git@github.com:YOUR_USER/YOUR_REPO.git
+git push -u origin main
+```
 
 ## License
 

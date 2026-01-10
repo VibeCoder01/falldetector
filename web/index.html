@@ -12,7 +12,7 @@
     />
     <link rel="icon" href="favicon.svg" type="image/svg+xml" />
     <link rel="icon" href="favicon.png" type="image/png" sizes="32x32" />
-    <link rel="stylesheet" href="styles.css" />
+    <link rel="stylesheet" href="styles.css?v=2" />
   </head>
   <body>
     <div class="glow"></div>
@@ -81,6 +81,15 @@
           </summary>
           <div class="panel-body">
             <form class="stack" id="camera-form">
+            <label>
+              Camera profile
+              <div class="inline-field">
+                <select id="camera-select"></select>
+                <button type="button" class="ghost small" id="add-camera">Add Camera</button>
+                <button type="button" class="ghost small" id="remove-camera">Remove</button>
+              </div>
+              <div class="inline-status muted" id="camera-select-status">1 camera</div>
+            </label>
             <label>
               Tapo camera name
               <input type="text" id="camera-name" placeholder="Living Room Cam" />
@@ -354,6 +363,6 @@
       </section>
     </main>
 
-    <script src="app.js"></script>
+    <script src="app.js?v=2"></script>
   </body>
 </html>
