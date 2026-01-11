@@ -80,6 +80,12 @@ const debugValidationBtn = document.querySelector("#debug-validation");
 const collapseAllBtn = document.querySelector("#collapse-all");
 const minimalModeBtn = document.querySelector("#minimal-mode");
 const normalModeBtn = document.querySelector("#normal-mode");
+const sessionOverlay = document.querySelector("#session-overlay");
+const sessionOverlayMessage = document.querySelector("#session-overlay-message");
+const confirmOverlay = document.querySelector("#confirm-overlay");
+const confirmMessage = document.querySelector("#confirm-message");
+const confirmYesBtn = document.querySelector("#confirm-yes");
+const confirmNoBtn = document.querySelector("#confirm-no");
 
 const fields = {
   name: document.querySelector("#responder-name"),
@@ -87,6 +93,16 @@ const fields = {
   email: document.querySelector("#responder-email"),
   phone: document.querySelector("#responder-phone"),
 };
+
+const SESSION_TOKEN_KEY = "fallDetectorSessionToken";
+const SESSION_NAME_KEY = "fallDetectorSessionName";
+let sessionToken = "";
+let sessionName = "";
+let sessionBlocked = false;
+let sessionReadyResolve = null;
+const sessionReady = new Promise((resolve) => {
+  sessionReadyResolve = resolve;
+});
 
 const responders = [];
 const cameras = [];
@@ -120,6 +136,266 @@ let monitorAllCameras = false;
 let minimalMode = false;
 let minimalModePreference = false;
 let autoMinimalMode = true;
+let serverStateFetched = false;
+let serverConfigLoaded = false;
+
+const showSessionOverlay = (message) => {
+  if (!sessionOverlay || !sessionOverlayMessage) {
+    if (message) {
+      alert(message);
+    }
+    return;
+  }
+  if (message) {
+    sessionOverlayMessage.textContent = message;
+  }
+  sessionOverlay.hidden = false;
+  document.body.classList.add("session-blocked");
+};
+
+const blockSession = (message) => {
+  sessionBlocked = true;
+  if (typeof stopMonitoring === "function") {
+    stopMonitoring();
+  }
+  if (typeof stopPreview === "function") {
+    stopPreview();
+  }
+  showSessionOverlay(message || "Session closed.");
+};
+
+const ensureSessionToken = () => {
+  let token = localStorage.getItem(SESSION_TOKEN_KEY);
+  if (!token) {
+    if (window.crypto && typeof window.crypto.randomUUID === "function") {
+      token = window.crypto.randomUUID();
+    } else {
+      token = `session-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+    }
+    localStorage.setItem(SESSION_TOKEN_KEY, token);
+  }
+  return token;
+};
+
+const promptForSessionName = () => {
+  const storedName = localStorage.getItem(SESSION_NAME_KEY) || "";
+  const response = window.prompt(
+    "Enter your name to access the control room:",
+    storedName
+  );
+  if (response === null) {
+    return "";
+  }
+  const name = response.trim();
+  if (name) {
+    localStorage.setItem(SESSION_NAME_KEY, name);
+  }
+  return name;
+};
+
+const confirmDialog = (message, yesLabel = "Yes", noLabel = "No") => {
+  return new Promise((resolve) => {
+    if (!confirmOverlay || !confirmMessage || !confirmYesBtn || !confirmNoBtn) {
+      resolve(window.confirm(message));
+      return;
+    }
+    confirmMessage.textContent = message;
+    confirmYesBtn.textContent = yesLabel;
+    confirmNoBtn.textContent = noLabel;
+    const cleanup = (result) => {
+      confirmOverlay.hidden = true;
+      confirmYesBtn.removeEventListener("click", onYes);
+      confirmNoBtn.removeEventListener("click", onNo);
+      resolve(result);
+    };
+    const onYes = () => cleanup(true);
+    const onNo = () => cleanup(false);
+    confirmYesBtn.addEventListener("click", onYes);
+    confirmNoBtn.addEventListener("click", onNo);
+    confirmOverlay.hidden = false;
+    confirmYesBtn.focus();
+  });
+};
+
+const beginSession = async () => {
+  showSessionOverlay("Starting session...");
+  sessionToken = ensureSessionToken();
+  sessionName = promptForSessionName();
+  if (!sessionName) {
+    blockSession("Session closed. Name is required for access.");
+    sessionReadyResolve();
+    return;
+  }
+  try {
+    const response = await fetch("/api/session/start", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ token: sessionToken, name: sessionName }),
+    });
+    if (response.status === 409) {
+      const payload = await response.json();
+      const activeUser = payload.active_user || "another operator";
+      const takeover = await confirmDialog(
+        `${activeUser} is currently monitoring. Do you want to log them off?`,
+        "Yes",
+        "No"
+      );
+      if (!takeover) {
+        blockSession(
+          `${activeUser} is currently monitoring. Your session has been closed.`
+        );
+        sessionReadyResolve();
+        return;
+      }
+      const takeoverResponse = await fetch("/api/session/takeover", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          token: sessionToken,
+          name: sessionName,
+          confirm: true,
+        }),
+      });
+      const takeoverPayload = await takeoverResponse.json();
+      if (!takeoverResponse.ok || !takeoverPayload.ok) {
+        blockSession(
+          takeoverPayload.error ||
+            "Unable to take over the active monitoring session."
+        );
+        sessionReadyResolve();
+        return;
+      }
+    } else if (!response.ok) {
+      const payload = await response.json().catch(() => ({}));
+      blockSession(payload.error || "Unable to start a session.");
+      sessionReadyResolve();
+      return;
+    }
+  } catch (error) {
+    blockSession("Unable to reach the session service.");
+    sessionReadyResolve();
+    return;
+  }
+  if (sessionOverlay) {
+    sessionOverlay.hidden = true;
+  }
+  document.body.classList.remove("session-blocked");
+  sessionReadyResolve();
+  await fetchServerState();
+  await fetchServerConfig();
+};
+
+const apiFetch = async (url, options = {}) => {
+  await sessionReady;
+  if (sessionBlocked) {
+    throw new Error("Session closed.");
+  }
+  const headers = new Headers(options.headers || {});
+  headers.set("X-Session-Token", sessionToken);
+  const response = await fetch(url, { ...options, headers });
+  if (response.status === 401 || response.status === 403) {
+    let payload = null;
+    try {
+      payload = await response.json();
+    } catch (error) {
+      payload = null;
+    }
+    if (payload) {
+      if (payload.kicked_by) {
+        blockSession(`You have been logged off by ${payload.kicked_by}.`);
+      } else if (payload.active_user) {
+        blockSession(
+          `${payload.active_user} is currently monitoring. Your session has been closed.`
+        );
+      } else {
+        blockSession(payload.error || "Session closed.");
+      }
+    } else {
+      blockSession("Session closed.");
+    }
+    throw new Error("Session closed.");
+  }
+  return response;
+};
+
+const fetchServerState = async () => {
+  try {
+    const response = await apiFetch("/api/state", { cache: "no-store" });
+    const payload = await response.json();
+    if (payload.ok) {
+      serverStateFetched = true;
+      setArmedState(Boolean(payload.armed));
+      if (payload.armed && armFeedback) {
+        const detail = payload.armed_by ? ` by ${payload.armed_by}` : "";
+        const timestamp = payload.armed_at
+          ? new Date(payload.armed_at * 1000).toLocaleTimeString()
+          : "";
+        armFeedback.textContent = `System armed${detail}${
+          timestamp ? ` at ${timestamp}` : ""
+        }.`;
+        armFeedback.classList.remove("error");
+      }
+    }
+  } catch (error) {
+    // Ignore server state failures; local state will be used.
+  }
+};
+
+const fetchServerConfig = async () => {
+  try {
+    const response = await apiFetch("/api/config", { cache: "no-store" });
+    const payload = await response.json();
+    if (payload.ok && payload.config && Object.keys(payload.config).length > 0) {
+      serverConfigLoaded = true;
+      applyConfig(payload.config);
+    }
+  } catch (error) {
+    // Ignore config failures; server is source of truth.
+  }
+};
+
+const saveConfigToServer = async (payload) => {
+  try {
+    const response = await apiFetch("/api/config", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    const saved = await response.json();
+    if (saved && saved.ok) {
+      serverConfigLoaded = true;
+      return true;
+    }
+  } catch (error) {
+    // Ignore config failures.
+  }
+  addStatus(
+    "Server config",
+    "warn",
+    "Unable to sync configuration with the server."
+  );
+  return false;
+};
+
+const updateServerState = async (armed) => {
+  try {
+    const response = await apiFetch("/api/state", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ armed, armed_by: sessionName }),
+    });
+    const payload = await response.json();
+    if (payload && payload.ok) {
+      serverStateFetched = true;
+    }
+  } catch (error) {
+    addStatus(
+      "Server state",
+      "warn",
+      "Unable to sync armed state with the server."
+    );
+  }
+};
 
 const updateReadinessState = (forceReady = false) => {
   if (!ctaSection || !ctaTitle) {
@@ -241,8 +517,6 @@ const updatePanelErrors = (items) => {
     } else {
       panel.classList.remove("has-error");
       panel.classList.add("has-valid");
-      panel.open = false;
-      panel.removeAttribute("open");
     }
   };
   setPanelState(cameraPanel, [
@@ -349,7 +623,7 @@ const setRtspPreview = () => {
   }
   const cacheBusted = `/api/rtsp-snapshot?rtsp=${encodeURIComponent(
     streamUrl
-  )}&t=${Date.now()}`;
+  )}&session=${encodeURIComponent(sessionToken)}&t=${Date.now()}`;
   previewImg.src = cacheBusted;
   streamContainer.classList.add("active");
 };
@@ -972,7 +1246,7 @@ const checkPreviewConnection = async () => {
       return;
     }
     try {
-      const response = await fetch(
+      const response = await apiFetch(
         `/api/rtsp-snapshot?rtsp=${encodeURIComponent(streamUrl)}`
       );
       if (response.ok) {
@@ -1002,7 +1276,7 @@ const checkPreviewConnection = async () => {
   }
 
   try {
-    const response = await fetch(
+    const response = await apiFetch(
       `/api/check-preview?url=${encodeURIComponent(previewUrl)}`
     );
     const payload = await response.json();
@@ -1046,7 +1320,7 @@ const checkOllamaConnection = async () => {
   }
 
   try {
-    const response = await fetch(
+    const response = await apiFetch(
       `/api/check-ollama?host=${encodeURIComponent(host)}&port=${port}`
     );
     const payload = await response.json();
@@ -1137,7 +1411,7 @@ const sendEmailAlert = async (context) => {
   const imageBase64 = context.imageBase64 || "";
   const imageType = context.imageType || "";
   try {
-    const response = await fetch("/api/email-alert", {
+    const response = await apiFetch("/api/email-alert", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -1210,7 +1484,7 @@ const runInferenceTest = async () => {
   analyzeInFlight = true;
   addStatus("Inference test", "info", "Running a single inference request...");
   try {
-    const response = await fetch("/api/ollama-analyze", {
+    const response = await apiFetch("/api/ollama-analyze", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -1343,22 +1617,6 @@ const buildConfigPayload = () => {
   };
 };
 
-const saveConfigToStorage = (payload) => {
-  localStorage.setItem("fallDetectorConfig", JSON.stringify(payload));
-};
-
-const loadConfigFromStorage = () => {
-  const raw = localStorage.getItem("fallDetectorConfig");
-  if (!raw) {
-    return null;
-  }
-  try {
-    return JSON.parse(raw);
-  } catch (error) {
-    return null;
-  }
-};
-
 const applyConfig = (payload) => {
   if (!payload || typeof payload !== "object") {
     return;
@@ -1468,6 +1726,7 @@ const setArmedState = (armed) => {
     saveArmBtn.textContent = armed ? "Armed ✓" : "Save & Arm";
     saveArmBtn.classList.toggle("armed", armed);
     saveArmBtn.setAttribute("aria-pressed", armed ? "true" : "false");
+    saveArmBtn.disabled = armed;
   }
   if (responsesPanel) {
     responsesPanel.classList.toggle("armed-ring", armed);
@@ -1497,7 +1756,7 @@ const setArmedState = (armed) => {
   updateReadinessState();
 };
 
-const handleSaveArm = (event) => {
+const handleSaveArm = async (event) => {
   if (event) {
     event.preventDefault();
   }
@@ -1522,20 +1781,23 @@ const handleSaveArm = (event) => {
   }
 
   const payload = buildConfigPayload();
-  saveConfigToStorage(payload);
+  await saveConfigToServer(payload);
   alertCount = 0;
   setArmedState(true);
+  updateServerState(true);
   if (autoMinimalMode) {
     setMinimalMode(true);
   }
-  addStatus("Save & Arm", "ok", "Configuration saved locally. Monitoring armed.");
+  addStatus(
+    "Save & Arm",
+    "ok",
+    "Configuration saved on server. Monitoring armed."
+  );
   if (armFeedback) {
     const timestamp = new Date().toLocaleTimeString();
     armFeedback.textContent = `Saved and armed at ${timestamp}.`;
     armFeedback.classList.remove("error");
   }
-  analyzeOnce();
-  startMonitoring(false);
   if (saveArmBtn) {
     saveArmBtn.classList.add("arm-pulse");
     window.clearTimeout(armFeedbackTimer);
@@ -1545,7 +1807,7 @@ const handleSaveArm = (event) => {
   }
 };
 
-const handleSaveConfig = (event) => {
+const handleSaveConfig = async (event) => {
   if (event) {
     event.preventDefault();
   }
@@ -1565,13 +1827,13 @@ const handleSaveConfig = (event) => {
   }
 
   const payload = buildConfigPayload();
-  saveConfigToStorage(payload);
+  await saveConfigToServer(payload);
   if (armFeedback) {
     const timestamp = new Date().toLocaleTimeString();
     armFeedback.textContent = `Saved at ${timestamp}.`;
     armFeedback.classList.remove("error");
   }
-  addStatus("Save", "ok", "Configuration saved locally.");
+  addStatus("Save", "ok", "Configuration saved on server.");
 };
 
 const renderResponses = () => {
@@ -1620,7 +1882,7 @@ const renderResponses = () => {
 
 const fetchResponses = async () => {
   try {
-    const response = await fetch("/api/ollama-responses");
+    const response = await apiFetch("/api/ollama-responses");
     const payload = await response.json();
     if (payload.ok) {
       ollamaResponses = payload.responses || [];
@@ -1648,6 +1910,8 @@ const fetchModels = async () => {
     fetchModelsBtn.disabled = true;
   }
   setModelFetchStatus("info", "Starting model fetch...");
+  const controller = new AbortController();
+  const timeoutId = window.setTimeout(() => controller.abort(), 6000);
   if (fetchModelsWaitingTimer) {
     window.clearTimeout(fetchModelsWaitingTimer);
   }
@@ -1657,8 +1921,9 @@ const fetchModels = async () => {
     }
   }, 250);
   try {
-    const response = await fetch(
-      `/api/ollama-tags?host=${encodeURIComponent(host)}&port=${port}`
+    const response = await apiFetch(
+      `/api/ollama-tags?host=${encodeURIComponent(host)}&port=${port}`,
+      { signal: controller.signal }
     );
     const payload = await response.json();
     if (payload.ok) {
@@ -1705,9 +1970,15 @@ const fetchModels = async () => {
     addStatus("Model list", "error", payload.error || "Failed to load models.");
     setModelFetchStatus("error", payload.error || "Failed to load models.");
   } catch (error) {
-    addStatus("Model list", "error", "Failed to reach Ollama host.");
-    setModelFetchStatus("error", "Failed to reach Ollama host.");
+    if (error && error.name === "AbortError") {
+      addStatus("Model list", "error", "Model fetch timed out.");
+      setModelFetchStatus("error", "Model fetch timed out.");
+    } else {
+      addStatus("Model list", "error", "Failed to reach Ollama host.");
+      setModelFetchStatus("error", "Failed to reach Ollama host.");
+    }
   } finally {
+    window.clearTimeout(timeoutId);
     fetchModelsInFlight = false;
     if (fetchModelsBtn) {
       fetchModelsBtn.disabled = false;
@@ -1721,7 +1992,7 @@ const fetchModels = async () => {
 
 const updatePullStatus = async () => {
   try {
-    const response = await fetch("/api/ollama-pull-status");
+    const response = await apiFetch("/api/ollama-pull-status");
     const payload = await response.json();
     if (!payload.ok) {
       return;
@@ -1807,7 +2078,7 @@ const analyzeOnce = async () => {
       const previewUrl = camera.previewUrl || "";
       const previewMode = camera.previewMode || "mjpeg";
       const cameraLabel = camera.name || camera.model || "Camera";
-      const response = await fetch("/api/ollama-analyze", {
+      const response = await apiFetch("/api/ollama-analyze", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -2201,6 +2472,7 @@ if (saveConfigBtn) {
 if (disarmBtn) {
   disarmBtn.addEventListener("click", () => {
     setArmedState(false);
+    updateServerState(false);
     updatePanelErrors(buildValidationItems());
     addStatus("Disarm", "ok", "Monitoring stopped.");
     updateReadinessState(true);
@@ -2245,7 +2517,7 @@ if (importConfigBtn && configFileInput) {
         const text = String(reader.result || "");
         const payload = JSON.parse(text);
         applyConfig(payload);
-        saveConfigToStorage(payload);
+        saveConfigToServer(payload);
         addStatus("Import", "ok", `Imported configuration from ${file.name}.`);
       } catch (error) {
         addStatus("Import", "error", "Failed to parse configuration file.");
@@ -2290,7 +2562,7 @@ if (pullModelBtn) {
       pullStatusTimer = window.setInterval(updatePullStatus, 5000);
     }
     try {
-      const response = await fetch("/api/ollama-pull", {
+      const response = await apiFetch("/api/ollama-pull", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ host, port, model, stream: true }),
@@ -2413,7 +2685,7 @@ if (cancelPullBtn) {
     }
     setModelPullStatus("info", "Cancelling download…");
     try {
-      const response = await fetch("/api/ollama-pull-cancel", { method: "POST" });
+      const response = await apiFetch("/api/ollama-pull-cancel", { method: "POST" });
       const payload = await response.json();
       if (payload.ok) {
         addStatus("Model pull", "warn", payload.message || "Pull cancelled.");
@@ -2443,6 +2715,8 @@ if (ollamaCustomInput) {
   ollamaCustomInput.addEventListener("input", updateLiveModelLabel);
 }
 
+beginSession();
+localStorage.removeItem("fallDetectorConfig");
 initializeCameraState();
 const storedMinimalMode = localStorage.getItem("fallDetectorMinimalMode");
 minimalModePreference = storedMinimalMode === "true";
@@ -2467,10 +2741,6 @@ setModelPullStatus("", "Idle.");
 setModelPullProgress(0, 100, false);
 setPullControls(false);
 updatePullStatus();
-const savedConfig = loadConfigFromStorage();
-if (savedConfig) {
-  applyConfig(savedConfig);
-}
 if (ollamaIntervalInput) {
   const intervalValue = Number(ollamaIntervalInput.value);
   if (!Number.isFinite(intervalValue) || intervalValue <= 0) {

@@ -11,7 +11,8 @@ snapshot images.
 - RTSP + MJPEG preview options with snapshot polling.
 - Ollama model selection, inference scheduling, and response history.
 - Gmail alerts with inline images and AI assessment text.
-- Local config save/load + export/import to JSON.
+- Server-side monitoring that keeps running after the browser closes.
+- Server config save/load + export/import to JSON.
 
 ## Project Structure
 
@@ -53,7 +54,7 @@ Emails include the AI assessment text plus the snapshot image inline.
 
 ## Configuration
 
-- **Save** stores config in localStorage.
+- **Save** stores config in server memory (resets when the server restarts).
 - **Export Config** downloads a JSON file.
 - **Import Config** restores settings from a JSON file.
 - Camera profiles are stored as an array. The active profile and "monitor all"
@@ -67,11 +68,12 @@ Emails include the AI assessment text plus the snapshot image inline.
 - **Run inference now** sends a single inference request and, if triggered,
   sends an email alert.
 - **Save & Arm** starts continuous monitoring on the configured interval for the
-  active camera or all cameras.
+  active camera or all cameras, even if no browser is connected.
 - Enable **Auto switch to Minimal Monitoring when armed** to hide all panels
   except the title and AI Responses while armed.
 - **Disarm** stops monitoring.
-- Panels collapse as they pass validation and re-expand when changes are needed.
+- Panels stay open while you edit; use **Collapse all panels** if you want to
+  close everything at once.
 
 ## License
 
