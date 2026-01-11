@@ -16,6 +16,22 @@
   </head>
   <body>
     <div class="glow"></div>
+    <div class="session-overlay" id="session-overlay" hidden>
+      <div class="session-card">
+        <h2>Control Room Access</h2>
+        <p id="session-overlay-message">Starting session...</p>
+      </div>
+    </div>
+    <div class="session-overlay confirm-overlay" id="confirm-overlay" hidden>
+      <div class="session-card">
+        <h2>Confirm Access</h2>
+        <p id="confirm-message">Do you want to log them off?</p>
+        <div class="confirm-actions">
+          <button type="button" class="ghost" id="confirm-no">No</button>
+          <button type="button" class="primary" id="confirm-yes">Yes</button>
+        </div>
+      </div>
+    </div>
     <header class="hero">
       <div class="hero-content">
         <p class="eyebrow">Live Safety Intelligence</p>
@@ -353,8 +369,8 @@
         <div>
           <h2 id="cta-title">Configuration required.</h2>
           <p class="muted">
-            Save the configuration and start the monitoring loop. Alerts will
-            fire as soon as a fall is detected.
+            Save the configuration and arm monitoring on the server. Alerts will
+            fire even if you close the browser.
           </p>
         </div>
         <div class="actions">
@@ -369,6 +385,6 @@
       </section>
     </main>
 
-    <script src="app.js?v=4"></script>
+    <script src="app.js?v=5"></script>
   </body>
 </html>
